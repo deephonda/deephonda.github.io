@@ -414,7 +414,7 @@ function moneyWith(s){const m={}; (s.payments||[]).forEach(p=>{const k=p.by||'';
 const mwName=k=>k?pName(k):'Business';
 // Dropdown in the sale register: choose who has the customer's money (and the finance money) for this sale.
 function mwSel(cur,on,mixed){
-  return `<select style="width:auto;padding:3px 6px;font-size:13px;${cur?'background:#e8f0fe;color:#1a56c4;font-weight:600':'background:#e7f6ec;color:#1a7f37;font-weight:600'}" onclick="event.stopPropagation()" onchange="${on}">${mixed?'<option value="*" selected>Mixed</option>':''}<option value="" ${!mixed&&!cur?'selected':''}>Business</option>${holders().map(p=>`<option value="${p.id}" ${!mixed&&cur===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`;
+  return `<select style="width:auto;padding:3px 6px;font-size:13px;${cur?'background:#e8f0fe;color:#1a56c4;font-weight:600':'background:#e7f6ec;color:#1a7f37;font-weight:600'}" onclick="event.stopPropagation()" onchange="${on}">${mixed?'<option value="*" selected>Mixed</option>':''}<option value="" ${!mixed&&!cur?'selected':''}>Business</option>${holders().map(p=>`<option value="${p.id}" ${!mixed&&cur===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}<option value="${TBD}" ${!mixed&&cur===TBD?'selected':''}>❓ ${TBD_L}</option></select>`;
 }
 function mwCell(s){
   if(!holders().length) return (t=>t||'<span class="muted">—</span>')(mwText(s));
@@ -483,7 +483,7 @@ function saveSale(enqId){
   if(enqId){const e=DB.enquiries.find(x=>x.id===enqId); if(e) e.status='Sold'}
   save(); dlg.close(); toast('Sale saved · Invoice #'+inv); render(); viewSale(id);
 }
-const recvBy=(sel,name='by',label='Money received by')=>`<label>${label}<select name="${name}"><option value="">Business (cash / bank)</option>${holders().map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(hLabel(p))}</option>`).join('')}</select></label>`;
+const recvBy=(sel,name='by',label='Money received by')=>`<label>${label}<select name="${name}"><option value="">Business (cash / bank)</option>${holders().map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(hLabel(p))}</option>`).join('')}<option value="${TBD}" ${sel===TBD?'selected':''}>❓ ${TBD_L}</option></select></label>`;
 const withP=by=>by?` <span class="pill open">with ${esc(pName(by))}</span>`:'';
 function addPayment(sale,p){
   const pid=uid(); if(!p.by) delete p.by; sale.payments.push({id:pid,...p});
@@ -740,7 +740,7 @@ function dayExtra(type,head,x={}){
   if(head===H.sal) L.push(`<label>Paid to (employee)<select name="payee">${selOf(emps(),x.payee)}</select></label>`,`<label>Payment type<select name="ptype">${opts(['Salary','Advance','Bonus'],x.ptype||'Salary')}</select></label>`,month);
   if(EXP_HEADS.includes(head)||head===H.spareSup) L.push(`<label>Shop / vendor<input name="vendor" value="${v('vendor')}" list="dlVend"></label>`,`<label>Bill no<input name="bill" value="${v('bill')}"></label>`);
   if(isCapH(head)) L.push(DB.partners.length?`<label>${head===H.hand?'Handed over by':'Partner'}<select name="pid">${selOf(head===H.hand?holders():DB.partners,x.pid)}</select></label>`:`<p class="note" style="margin:0;align-self:end;color:var(--red)">Add partners first (Accounts → Partners).</p>`);
-  else L.push(`<label>${type==='in'?'Received by':'Paid by'}<select name="by"><option value="">Business (cash / bank)</option>${holders().map(p=>`<option value="${p.id}" ${x.by===p.id?'selected':''}>${esc(hLabel(p))} (${type==='in'?'kept it':'own pocket'})</option>`).join('')}</select></label>`);
+  else L.push(`<label>${type==='in'?'Received by':'Paid by'}<select name="by"><option value="">Business (cash / bank)</option>${holders().map(p=>`<option value="${p.id}" ${x.by===p.id?'selected':''}>${esc(hLabel(p))} (${type==='in'?'kept it':'own pocket'})</option>`).join('')}<option value="${TBD}" ${x.by===TBD?'selected':''}>❓ ${TBD_L}</option></select></label>`);
   return L.join('');
 }
 function dayForm(x={}){
@@ -789,20 +789,32 @@ function dayDesc(d){
 }
 const byPill=d=>d.fin?' <span class="pill open">Direct to dealer a/c</span>':d.by?` <span class="pill open">${d.type==='in'?'Kept by':'Paid by'} ${esc(pName(d.by))}</span>`:d.old?' <span class="pill lost">Old entry · not in cash</span>':'';
 const dayRows=()=>DB.daybook.filter(d=>d.date>=dayFrom&&d.date<=dayTo&&(!dayH||headOf(d)===dayH)).sort((a,b)=>a.date.localeCompare(b.date)||a.created-b.created);
+// Who paid / received: Business, a partner, staff, or "To be decided" (changeable right in the list)
+function whoCell(d){
+  if(d.fin) return '<span class="pill open">Direct to dealer a/c</span>';
+  if(isCapH(d.head)) return d.pid?`<b>${esc(pName(d.pid))}</b>`:'—';
+  const cur=d.by||'', st=cur===TBD?'background:#fff3c4;color:#8a5a00;font-weight:600':cur?'background:#e8f0fe;color:#1a56c4;font-weight:600':'background:#e7f6ec;color:#1a7f37;font-weight:600';
+  if(d.saleId&&d.payId){const s=DB.sales.find(x=>x.id===d.saleId); return s?mwSel(cur,`setSaleBy('${s.id}',this.value)`,false):esc(cur?pName(cur):'Business')}
+  if(d.saleId||d.oldId) return cur?`<b>${esc(pName(cur))}</b>`:'Business';
+  return `<select style="width:auto;padding:3px 6px;font-size:13px;${st}" onchange="setDayBy('${d.id}',this.value)"><option value="">Business</option>${holders().map(p=>`<option value="${p.id}" ${cur===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}<option value="${TBD}" ${cur===TBD?'selected':''}>❓ ${TBD_L}</option></select>`;
+}
+function setDayBy(id,by){const d=DB.daybook.find(x=>x.id===id); if(!d) return; if(by) d.by=by; else delete d.by; save(); dayList(); toast(by===TBD?'Marked: to be decided':'Saved – '+(by?pName(by):'Business'))}
+let dayTbd=false;
 function dayList(){
-  const rows=dayRows(), ob=dayBalance(dayFrom); let tin=0,tout=0,cin=0,cout=0;
+  const rows=dayRows().filter(d=>!dayTbd||d.by===TBD), ob=dayBalance(dayFrom); let tin=0,tout=0,cin=0,cout=0;
   rows.forEach(d=>{const a=num(d.amount); if(d.type==='in'){tin+=a;if(d.mode==='Cash'&&inCash(d))cin+=a}else{tout+=a;if(d.mode==='Cash'&&inCash(d))cout+=a}});
   $('#dayList').innerHTML=`<div class="stats">
     <div class="stat"><div class="k">Opening cash</div><div class="v">${rs(ob.cash)}</div></div>
     <div class="stat"><div class="k">Receipts</div><div class="v" style="color:var(--green)">${rs(tin)}</div></div>
     <div class="stat"><div class="k">Payments</div><div class="v" style="color:var(--red)">${rs(tout)}</div></div>
     <div class="stat red"><div class="k">Closing cash in hand</div><div class="v">${rs(ob.cash+cin-cout)}</div></div></div>
+  ${(n=>n?`<div class="warn" style="cursor:pointer;margin-bottom:8px" onclick="dayTbd=!dayTbd;dayList()">❓ <b>${n} ${n>1?'entries':'entry'}</b> – who paid / received is “${TBD_L}”. <u>${dayTbd?'Show all entries':'Show only these'}</u></div>`:'')(DB.daybook.filter(x=>x.by===TBD).length)}
   ${dayH?`<p class="note" style="margin:0 0 8px">Showing only “${esc(dayH)}”. Opening / closing cash are for all heads.</p>`:''}
-  ${rows.length?`<div class="tablewrap"><table class="nice"><thead><tr><th>Date</th><th>Head</th><th>Remarks</th><th>Mode</th><th class="num">Receipt</th><th class="num">Payment</th><th></th></tr></thead><tbody>
+  ${rows.length?`<div class="tablewrap"><table class="nice"><thead><tr><th>Date</th><th>Head</th><th>Remarks</th><th>Mode</th><th>Paid / received by</th><th class="num">Receipt</th><th class="num">Payment</th><th></th></tr></thead><tbody>
   ${rows.map(d=>`<tr><td>${fd(d.date)}</td><td>${headOf(d)?`<span class="pill ${d.type==='in'?'in':'lost'}">${esc(headOf(d))}</span>`:'<span class="muted">—</span>'}</td>
-  <td class="wrap" style="max-width:380px">${esc(d.particulars)}${byPill(d)}${dayDesc(d)?`<div class="sub2">${esc(dayDesc(d))}</div>`:''}</td><td>${esc(d.mode)}</td><td class="num">${d.type==='in'?rs(d.amount):''}</td><td class="num">${d.type==='out'?rs(d.amount):''}</td>
+  <td class="wrap" style="max-width:380px">${esc(d.particulars)}${d.old?' <span class="pill lost">Old entry · not in cash</span>':''}${dayDesc(d)?`<div class="sub2">${esc(dayDesc(d))}</div>`:''}</td><td>${esc(d.mode)}</td><td style="white-space:nowrap">${whoCell(d)}</td><td class="num">${d.type==='in'?rs(d.amount):''}</td><td class="num">${d.type==='out'?rs(d.amount):''}</td>
   <td style="white-space:nowrap">${d.oldId?`<button class="btn plain sm" onclick="go('old')">Old Vehicles</button>`:d.saleId?'<span class="muted" style="font-size:12px">from Sales</span>':`<button class="btn plain sm" onclick="editDay('${d.id}')">Edit</button> <button class="btn plain sm" onclick="delDay('${d.id}')">Delete</button>`}</td></tr>`).join('')}</tbody>
-  <tfoot><tr class="tot"><td colspan="4">Total</td><td class="num">${rs(tin)}</td><td class="num">${rs(tout)}</td><td></td></tr></tfoot></table></div>`:'<div class="empty">No entries for these dates.</div>'}`;
+  <tfoot><tr class="tot"><td colspan="5">Total</td><td class="num">${rs(tin)}</td><td class="num">${rs(tout)}</td><td></td></tr></tfoot></table></div>`:'<div class="empty">No entries for these dates.</div>'}`;
 }
 function addDay(e){
   e.preventDefault(); const d=formData(e.target); if(num(d.amount)<=0) return; const r=dayRec(d); if(!r) return;
@@ -1603,10 +1615,13 @@ async function pdfExport(which){
 /* ---------- partners ---------- */
 const COLL=()=>{const S=DB.settings; if(!S.collectors) S.collectors=[{id:'c_gurvinder',name:'Gurvinder Singh'}]; return S.collectors};
 const holders=()=>[...DB.partners,...COLL()];
+const whoByName=n=>{n=txt(n).toLowerCase(); if(!n) return TBD; if(/business|shop|showroom|firm|dukan|दुकान|शोरूम/.test(n)) return '';
+  const h=holders().find(p=>{const w=p.name.toLowerCase().split(/\s+/); return w.some(x=>x.length>2&&n.includes(x))||n.includes(p.name.toLowerCase())}); return h?h.id:TBD};
 const isStaffH=id=>COLL().some(c=>c.id===id);
 const hLabel=h=>(isStaffH(h.id)?'Staff – ':'Partner – ')+h.name;
-const hLed=id=>isStaffH(id)?`${pName(id)} A/c`:`${pName(id)} Capital A/c`;
-const pName=id=>DB.partners.find(p=>p.id===id)?.name||COLL().find(c=>c.id===id)?.name||'?';
+const TBD='tbd', TBD_L='To be decided';
+const hLed=id=>id===TBD?'Suspense A/c':isStaffH(id)?`${pName(id)} A/c`:`${pName(id)} Capital A/c`;
+const pName=id=>id===TBD?TBD_L:DB.partners.find(p=>p.id===id)?.name||COLL().find(c=>c.id===id)?.name||'?';
 function ptRow(p){return `<div class="row pt" style="margin-bottom:6px;flex-wrap:nowrap"><input type="hidden" value="${esc(p.id||'')}"><input placeholder="Partner name" value="${esc(p.name)}" style="flex:3;min-width:0"><input placeholder="Share" inputmode="decimal" value="${esc(p.share??'')}" style="width:80px"><span>%</span></div>`}
 function savePartners(){
   const rows=[...document.querySelectorAll('#ptRows .pt')].map(r=>{const i=r.querySelectorAll('input');return {id:i[0].value||uid(),name:String(i[1].value).trim(),share:num(i[2].value)}});
@@ -1637,7 +1652,7 @@ const SALE_SCHEMA=objSchema({date:S_STR,sale_challan_no:S_STR,purchase_challan_n
   model:S_STR,colour:S_STR,engine:S_STR,chassis:S_STR,price:S_NUM,accessories:S_NUM,finance_amount:S_NUM,financer:S_STR,exchange_vehicle:S_STR,exchange_value:S_NUM,
   paid_amount:S_NUM,payment_mode:{type:'string',enum:['Cash','Cheque','UPI','Bank']},payment_ref:S_STR,notes:S_STR});
 const PAY_SCHEMA=objSchema({entries:{type:'array',items:objSchema({date:S_STR,direction:{type:'string',enum:['in','out']},head:S_STR,particulars:S_STR,vendor:S_STR,amount:S_NUM,
-  mode:{type:'string',enum:['Cash','Bank','UPI','Cheque']},ref:S_STR})}});
+  mode:{type:'string',enum:['Cash','Bank','UPI','Cheque']},ref:S_STR,paid_by:S_STR})}});
 
 const SALES_SCHEMA=objSchema({sales:{type:'array',items:SALE_SCHEMA}});
 async function aiSale(files){
@@ -1753,6 +1768,7 @@ Extract every money transaction shown.
 - mode: UPI for UPI screenshots, Cheque for cheques, Bank for NEFT / RTGS / IMPS / bank transfer, otherwise Cash.
 - ref: bill no / cheque no / UTR / transaction id if shown, else "".
 - date as YYYY-MM-DD (Indian dates are day-month-year); for ditto use the date above; "" if not shown.
+- paid_by: the name of the person who paid (for "out") or received (for "in") the money, if a name is written next to the entry or on the bill (e.g. Randeep, Ashwani, Sudhir, Gurvinder${holders().length?' – known people: '+holders().map(h=>h.name).join(', '):''}). Write the name in English letters; if it is one of the known people (even written in Hindi, e.g. "सुधीर जी"), write that exact known name. Write "business" if it clearly says the shop / business paid. Otherwise "".
 - Skip total, balance and carried-forward lines. Never invent a value.
 - If you cannot read or understand an entry, or any word / name / number in it, do NOT guess: put "?" in that text field (e.g. particulars "? unclear item", vendor "?"). Still list the entry. If an amount cannot be read, use 0.`;
     const d=await aiRun(a.key,a.parts,prompt,PAY_SCHEMA,'payments');
@@ -1776,14 +1792,14 @@ function reviewPhotoPay(E){
   const sel=(n,arr,v,extra='')=>`<select name="${n}" style="width:auto" ${extra}>${arr.map(([k,l])=>`<option value="${esc(k)}" ${k===v?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
   const hl=t=>(t==='in'?HEADS_IN:HEADS_OUT).filter(h=>!isCapH(h)).map(h=>[h,h]);
   const fixH=(t,h)=>hl(t).some(x=>x[0]===h)?h:(t==='in'?H.mrec:H.misc);
-  const byO=[['','Business'],...holders().map(p=>[p.id,p.name+(isStaffH(p.id)?' (staff)':' (own pocket)')])];
-  openDlg(`${E.length} entries found in photo — check and Save`,`<div class="tablewrap imp"><table id="pyT"><tr><th></th><th>Date</th><th>In / Out</th><th>Head</th><th>Remarks</th><th>Amount ₹</th><th>Mode</th><th>Shop / vendor</th><th>Bill / Ref</th>${holders().length?'<th>Paid by</th>':''}<th></th></tr>
+  const byO=[['','Business'],...holders().map(p=>[p.id,p.name+(isStaffH(p.id)?' (staff)':' (own pocket)')]),[TBD,'❓ '+TBD_L]];
+  openDlg(`${E.length} entries found in photo — check and Save`,`<div class="tablewrap imp"><table id="pyT"><tr><th></th><th>Date</th><th>In / Out</th><th>Head</th><th>Remarks</th><th>Amount ₹</th><th>Mode</th><th>Shop / vendor</th><th>Bill / Ref</th><th>Paid / received by</th><th></th></tr>
   ${E.map((e,i)=>{const dp=dup(e), tw=twin(e,i), t=e.direction==='in'?'in':'out';return `<tr><td><input type="checkbox" ${dp||tw>=0?'':'checked'} style="width:auto"> <b>${i+1}</b></td><td><input type="date" name="date" value="${esc(toISO(e.date)||today())}"></td>
   <td>${sel('type',[['out','Payment (out)'],['in','Receipt (in)']],t,`onchange="const h=this.closest('tr').querySelector('[name=head]');h.innerHTML=(this.value==='in'?HEADS_IN:HEADS_OUT).filter(x=>!isCapH(x)).map(x=>'<option>'+x+'</option>').join('')"`)}</td>
   <td>${sel('head',hl(t),fixH(t,e.head))}</td><td><input name="particulars" value="${esc(e.particulars)}" style="min-width:180px"></td>
   <td><input name="amount" inputmode="decimal" value="${num(e.amount)||''}" style="width:100px"></td><td>${sel('mode',['Cash','Bank','UPI','Cheque'].map(m=>[m,m]),e.mode)}</td>
   <td><input name="vendor" value="${esc(e.vendor||'')}" style="width:130px"></td><td><input name="ref" value="${esc(e.ref)}" style="width:100px"></td>
-  ${holders().length?`<td>${sel('by',byO,'')}</td>`:''}<td style="white-space:normal;min-width:190px">${dp?`<span class="pill due">⚠ Already in Day Book</span><div class="sub2">${fd(dp.date)} · ${esc(headOf(dp)||'')} · ${rs(dp.amount)} · ${esc(dp.particulars||'')}</div>`:tw>=0?`<span class="pill due">⚠ Same as row ${tw+1}</span>`:''}</td></tr>`}).join('')}</table></div>
+  <td>${sel('by',byO,whoByName(e.paid_by))}${txt(e.paid_by)?`<div class="sub2">written: ${esc(e.paid_by)}</div>`:''}</td><td style="white-space:normal;min-width:190px">${dp?`<span class="pill due">⚠ Already in Day Book</span><div class="sub2">${fd(dp.date)} · ${esc(headOf(dp)||'')} · ${rs(dp.amount)} · ${esc(dp.particulars||'')}</div>`:tw>=0?`<span class="pill due">⚠ Same as row ${tw+1}</span>`:''}</td></tr>`}).join('')}</table></div>
   <p class="note">❓ Yellow cells = AI could not read them clearly (marked “?”) — please fill them in. ⚠ Check the amount and head read by AI against the bill. Untick any entry you do not want. Customer payments for vehicles should be taken via “Receive” (Customer Dues / Sales) so their dues update.</p>`,
   `<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="savePhotoPay()">Save to Day Book</button>`);
   markQ('pyT','amount');
@@ -2071,7 +2087,7 @@ function tallyExport(){
   const {V,parties,T}=tallyVouchers(tFrom,tTo); if(!V.length){alert('No entries in these dates.');return}
   const x=esc, amt=n=>(Math.round(n*100)/100).toFixed(2);
   const led=(n,p)=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><LEDGER NAME="${x(n)}"><NAME.LIST><NAME>${x(n)}</NAME></NAME.LIST><PARENT>${x(p)}</PARENT><ISBILLWISEON>No</ISBILLWISEON></LEDGER></TALLYMESSAGE>`;
-  const masters=[...parties.map(p=>led(p,T.debtors)),led(T.exchange,'Current Assets'),led(T.expense,'Indirect Expenses'),led(T.income,'Indirect Incomes'),led('Discount Allowed','Indirect Expenses'),led('Profit on Old Vehicles','Indirect Incomes'),...[T.rentL,T.salaryL,T.spareL,T.workshopL,T.miscL].map(n=>led(n,'Indirect Expenses')),led(T.spareSup,'Sundry Creditors'),...['Service / workshop income','Other income'].map(n=>led(n,'Indirect Incomes')),...COLL().map(c=>led(`${c.name} A/c`,'Current Assets')),...DB.partners.map(p=>led(`${p.name} Capital A/c`,'Capital Account'))];
+  const masters=[...parties.map(p=>led(p,T.debtors)),led(T.exchange,'Current Assets'),led(T.expense,'Indirect Expenses'),led(T.income,'Indirect Incomes'),led('Discount Allowed','Indirect Expenses'),led('Profit on Old Vehicles','Indirect Incomes'),...[T.rentL,T.salaryL,T.spareL,T.workshopL,T.miscL].map(n=>led(n,'Indirect Expenses')),led(T.spareSup,'Sundry Creditors'),...['Service / workshop income','Other income'].map(n=>led(n,'Indirect Incomes')),...COLL().map(c=>led(`${c.name} A/c`,'Current Assets')),led('Suspense A/c','Suspense A/c'),...DB.partners.map(p=>led(`${p.name} Capital A/c`,'Capital Account'))];
   const vch=V.map(v=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER REMOTEID="hsc-${x(v.id)}" VCHTYPE="${v.type}" ACTION="Create" OBJVIEW="Accounting Voucher View">
 <DATE>${v.date.replace(/-/g,'')}</DATE><EFFECTIVEDATE>${v.date.replace(/-/g,'')}</EFFECTIVEDATE><VOUCHERTYPENAME>${v.type}</VOUCHERTYPENAME>${v.no?`<VOUCHERNUMBER>${x(v.no)}</VOUCHERNUMBER>`:''}${v.ref?`<REFERENCE>${x(v.ref)}</REFERENCE>`:''}${v.party?`<PARTYLEDGERNAME>${x(v.party)}</PARTYLEDGERNAME>`:''}
 <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW><ISINVOICE>No</ISINVOICE><NARRATION>${x(v.nar)}</NARRATION>
