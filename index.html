@@ -117,6 +117,7 @@ a.btn{text-decoration:none}
   <div class="grow"></div>
   <span id="sync" class="sub" style="margin-right:4px"></span>
   <button class="btn ghost sm" style="background:#fff" onclick="backupJSON()">⬇ Backup now</button>
+  <button id="hOut" class="btn ghost sm hide" style="background:#fff;margin-left:6px" onclick="cloudLogout()">⎋ Logout</button>
 </header>
 <nav id="nav"></nav>
 <main id="app"></main>
@@ -2183,7 +2184,7 @@ function syncLabel(){
   if(pendingN>0) return navigator.onLine?'⏳ Saving…':'📴 Offline – will sync when online';
   return '☁ Synced';
 }
-function setSync(s){if(s!==undefined)SYNC_ST=s;const t=syncLabel();const a=$('#sync');if(a)a.textContent=t+(cloudReady&&cloudEmail?' · '+cloudEmail:'');const b=$('#sync2');if(b)b.textContent=t}
+function setSync(s){const ho=$('#hOut'); if(ho) ho.classList.toggle('hide',!(CLOUD&&(cloudReady||STAFF)));if(s!==undefined)SYNC_ST=s;const t=syncLabel();const a=$('#sync');if(a)a.textContent=t+(cloudReady&&cloudEmail?' · '+cloudEmail:'');const b=$('#sync2');if(b)b.textContent=t}
 addEventListener('online',()=>setSync());addEventListener('offline',()=>setSync());
 
 async function cloudInit(){
