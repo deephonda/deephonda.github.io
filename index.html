@@ -166,7 +166,7 @@ const FB_CONFIG={apiKey:"AIzaSyBwEfdGtbhXbaiqVv34K1olQDwWSvD301E",authDomain:"ho
 const FBK=KEY+'_fbcfg';
 function fbCfg(){if(FB_CONFIG)return FB_CONFIG;try{return JSON.parse(localStorage.getItem(FBK))||null}catch(e){return null}}
 const CLOUD=!!fbCfg();
-let STAFF=false,FINQ=[],staffQ='',STOCKV=[],LAST_SV='';
+let STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],LAST_SV='';
 let FB=null,cloudReady=false,READONLY=false,SYNCED={},UNSUB=[],appDirty=false,cloudEmail='',pendingN=0,SYNC_ST='';
 function save(){
   if(READONLY){ try{DB=JSON.parse(localStorage.getItem(KEY))||DB}catch(e){} toast('📴 No internet — this entry was not saved'); setTimeout(render,0); return }
@@ -2348,7 +2348,7 @@ service cloud.firestore {
         && request.auth.token.email.lower() in [${L(sf)}];
       allow create, update: if request.auth != null
         && request.auth.token.email.lower() in [${L(sf)}]
-        && request.resource.data.keys().hasOnly(['challan','date','pchallan','name','phone','model','chassis','down','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue','by','at','m']);
+        && request.resource.data.keys().hasOnly(['challan','date','pchallan','name','rel','relName','phone','address','price','extra','model','chassis','down','mode','ref','rcvBy','notes','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue','by','at','m']);
     }
   }
 }`}
@@ -2384,13 +2384,14 @@ function cloudCard(){
 // Admin side: a small read-only list of vehicles in stock, so staff can pick a vehicle by purchase challan
 function stockViewSync(){
   if(!FB||!cloudReady||STAFF) return;
-  const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine)]));
-  if(j===LAST_SV) return; LAST_SV=j;
-  FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j}).catch(()=>{LAST_SV=''});
+  const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine)])), pj=JSON.stringify(DB.partners.map(p=>[p.id,p.name]));
+  if(j+pj===LAST_SV) return; LAST_SV=j+pj;
+  FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j,p:pj}).catch(()=>{LAST_SV=''});
 }
 const chKey=v=>txt(v).toUpperCase().replace(/[^A-Z0-9]/g,'');
 const finRef=id=>FB.F.doc(FB.db,'shops',SHOP,'finentries',id);
-const STF=['challan','date','pchallan','name','phone','model','chassis','down','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue'];
+const STF_S=['challan','date','name','rel','relName','phone','address','price','pchallan','model','chassis','extra','amount','financer','exModel','exReg','exValue','down','mode','ref','rcvBy','notes'], STF_N=['price','extra','amount','exValue','down'];
+const STF=['rel','relName','address','price','extra','mode','ref','rcvBy','notes','challan','date','pchallan','name','phone','model','chassis','down','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue'];
 const stSales=e=>{const k=chKey(e.challan);return k?DB.sales.filter(x=>chKey(x.schallan)===k):[]};
 // Admin side: copy each staff entry into the sale with the same Sale Challan No.
 function finApply(){
@@ -2404,6 +2405,9 @@ function finApply(){
     const s=ss[0], ver=JSON.stringify(STF.map(k=>e[k]??''));
     if(s.finSrc===ver&&s.finSrcId===e.id) continue;
     const mine=s.finSrcId===e.id;
+    // customer & price
+    for(const k of ['rel','relName','phone','address']) if(txt(e[k])) s[k]=txt(e[k]);
+    if(num(e.price)>0){ s.price=num(e.price); if(e.extra!=null) s.extra=num(e.extra); s.total=num(s.price)+num(s.extra) }
     // finance
     if(num(e.amount)>0) s.finance=num(e.amount);
     if(txt(e.financer)) s.financer=txt(e.financer);
@@ -2422,10 +2426,11 @@ function finApply(){
     const others=s.payments.filter(x=>x.id!==pid).reduce((t,x)=>t+num(x.amount),0);
     if(dp>0&&!p&&Math.round(others)!==Math.round(dp)){ p={id:pid,mode:'Cash'}; s.payments.push(p) }
     if(p&&dp>0){
-      Object.assign(p,{date:e.date||s.date,amount:dp});
+      Object.assign(p,{date:e.date||s.date,amount:dp}); if(e.mode) p.mode=e.mode; if(e.ref!=null) p.ref=txt(e.ref);
+      if(e.rcvBy!==undefined){ if(e.rcvBy&&DB.partners.some(x=>x.id===e.rcvBy)) p.by=e.rcvBy; else delete p.by }
       let pe=DB.daybook.find(x=>x.payId===pid);
       if(!pe){ pe={id:'dpd_'+s.id,created:Date.now(),type:'in',saleId:s.id,payId:pid}; DB.daybook.push(pe) }
-      Object.assign(pe,{date:p.date,amount:dp,mode:p.mode||'Cash',particulars:`Sale #${s.inv} – ${s.name} (${s.model}) · down payment`}); if(p.by) pe.by=p.by; else delete pe.by;
+      Object.assign(pe,{date:p.date,amount:dp,mode:p.mode||'Cash',particulars:`Sale #${s.inv} – ${s.name} (${s.model})${p.ref?' · '+p.ref:''}`}); if(p.by) pe.by=p.by; else delete pe.by;
     } else if(p&&dp<=0){ s.payments=s.payments.filter(x=>x.id!==pid); DB.daybook=DB.daybook.filter(x=>x.payId!==pid) }
     // old vehicle taken in exchange
     if(txt(e.exReg)||txt(e.exModel)||num(e.exValue)){
@@ -2462,8 +2467,9 @@ function staffToSale(id){
   if(!st&&e.pchallan){const c=avail.filter(x=>chKey(x.challan)===chKey(e.pchallan)&&(!e.model||String(x.model).toLowerCase().includes(String(e.model).toLowerCase()))); if(c.length===1) st=c[0]}
   newSale(st?.id); const f=$('#fs'); if(!f) return;
   const set=(n,v)=>{if(f[n]&&v!=null&&v!=='')f[n].value=v};
-  set('date',e.date); set('schallan',e.challan); set('name',e.name); set('phone',e.phone); set('finance',num(e.amount)||''); set('financer',e.financer);
-  set('exchange',e.exModel); set('exchangeReg',up(e.exReg)); set('exchangeValue',num(e.exValue)||''); set('notes','Entered by '+(e.by||'staff'));
+  set('date',e.date); set('schallan',e.challan); set('name',e.name); set('phone',e.phone); set('rel',e.rel); set('relName',e.relName); set('address',e.address);
+  set('price',num(e.price)||''); set('extra',num(e.extra)||''); set('finance',num(e.amount)||''); set('financer',e.financer);
+  set('exchange',e.exModel); set('exchangeReg',up(e.exReg)); set('exchangeValue',num(e.exValue)||''); set('notes',[txt(e.notes),'Entered by '+(e.by||'staff')].filter(Boolean).join(' · '));
   if(f.paid){ f.paid.value=''; f.paid.disabled=true; f.paid.placeholder=num(e.down)?`${rs(e.down)} – added automatically`:'' }
   if(!st) f.stockId.insertAdjacentHTML('afterend',`<div class="sub2" style="color:var(--amber)">Choose the vehicle — ${esc([e.model,e.chassis,e.pchallan&&'purch. challan '+e.pchallan].filter(Boolean).join(' · '))||'staff gave no vehicle details'}</div>`);
   saleCalc();
@@ -2474,6 +2480,7 @@ function staffStart(){
   const {F,db}=FB; let first=true;
   UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'stockview','all'),snap=>{
     try{STOCKV=snap.exists()?JSON.parse(snap.data().j)||[]:[]}catch(e){STOCKV=[]}
+    try{STOCKP=snap.exists()&&snap.data().p?JSON.parse(snap.data().p)||[]:[]}catch(e){STOCKP=[]}
     staffDl();
   },()=>{}));
   UNSUB.push(F.onSnapshot(F.collection(db,'shops',SHOP,'finentries'),{includeMetadataChanges:true},snap=>{
@@ -2507,35 +2514,48 @@ function staffView(){
   } else {
     $('#app').innerHTML=`<div class="card" style="max-width:760px;margin:16px auto">
     <h2 style="margin-top:0">New sale entry</h2>
-    <form id="sform" class="grid" onsubmit="staffSave(event)">
+    <form id="sform" class="grid" onsubmit="staffSave(event)" oninput="staffCalc()">
       <input type="hidden" name="eid">
-      <label>Sale Challan No<input name="challan" required autocapitalize="characters" oninput="staffHint()"></label>
       <label>Sale date<input type="date" name="date" required></label>
+      <label>Sale Challan / Bill No<input name="challan" required autocapitalize="characters" oninput="staffHint()"></label>
       <label>Customer name<input name="name" required></label>
+      <label>Relation<select name="rel"><option>S/o</option><option>W/o</option><option>D/o</option><option>C/o</option></select></label>
+      <label>Father / husband name<input name="relName"></label>
       <label>Mobile<input name="phone" inputmode="tel"></label>
+      <label class="span2">Address<input name="address"></label>
+      <label>Vehicle price (on-road) ₹<input name="price" inputmode="decimal"></label>
+      <p class="span2" style="margin:6px 0 0"><b>Vehicle</b> <span class="muted">— type the purchase challan or chassis no.; model and chassis fill in from stock</span></p>
       <label>Purchase Challan No<input name="pchallan" list="sdlP" autocapitalize="characters" oninput="staffPC()" onchange="staffPC()"></label>
       <label>Model<input name="model" list="sdlM"></label>
       <label class="span2">Chassis No<input name="chassis" list="sdlC" class="mono" autocapitalize="characters" oninput="staffCH()" onchange="staffCH()"></label>
       <div id="spick" class="span2"></div><p id="sstk" class="note span2" style="margin:0"></p>
-      <label>Down payment ₹<input name="down" inputmode="decimal"></label>
-      <label>Finance amount ₹ (0 if cash sale)<input name="amount" inputmode="decimal"></label>
-      <label>Financer<input name="financer" list="sdlF" placeholder="Muthoot…"></label>
-      <p class="span2" style="margin:6px 0 0"><b>Old vehicle taken in exchange</b> <span class="muted">(leave empty if none)</span></p>
-      <label>Old vehicle number<input name="exReg" autocapitalize="characters" placeholder="HR02AB1234"></label>
-      <label>Old vehicle model<input name="exModel" placeholder="Splendor 2016"></label>
-      <label>Old vehicle value ₹<input name="exValue" inputmode="decimal"></label>
+      <label>Accessories / extra ₹<input name="extra" inputmode="decimal"></label>
+      <label>Finance amount ₹<input name="amount" inputmode="decimal"></label>
+      <label>Financer / bank<input name="financer" list="sdlF" placeholder="Muthoot…"></label>
+      <label>Old bike taken (model)<input name="exModel" placeholder="e.g. Hero Splendor 2016"></label>
+      <label>Old bike number<input name="exReg" autocapitalize="characters" placeholder="HR02AB1234" style="text-transform:uppercase"></label>
+      <label>Old bike value (exchange) ₹<input name="exValue" inputmode="decimal"></label>
+      <label>Paid now – amount ₹<input name="down" inputmode="decimal"></label>
+      <label>Paid by<select name="mode"><option>Cash</option><option>Cheque</option><option>UPI</option><option>Bank</option></select></label>
+      <label>Cheque / UTR no<input name="ref"></label>
+      <label>Money received by<select name="rcvBy" id="srcv"><option value="">Business (cash / bank)</option></select></label>
+      <label class="span2">Notes<input name="notes"></label>
+      <div class="card span2" style="margin:4px 0 0;background:#fafaf9"><div class="row"><div class="grow">Total: <b id="sT">₹0</b></div><div class="grow">Balance due: <b id="sD">₹0</b></div></div></div>
       <p class="note span2" style="margin:0">When the finance money comes, enter it in the <b>Finance</b> tab.</p>
       <p id="shint" class="note span2" style="margin:0"></p>
-      <div class="row span2"><button class="btn">Save</button><button type="button" class="btn plain" onclick="staffView()">Clear</button></div>
+      <div class="row span2"><button class="btn">Save sale</button><button type="button" class="btn plain" onclick="staffView()">Clear</button></div>
     </form>${dls}<span id="sdlS"></span></div>${listCard('My sale entries')}${foot}`;
-    $('#sform').date.value=today(); staffDl();
+    $('#sform').date.value=today(); staffDl(); staffCalc();
   }
   staffList();
 }
 // vehicles in stock that no other staff entry has taken yet
 function stAvail(){const f=$('#sform'), me=f&&f.eid.value, used=new Set(FINQ.filter(e=>e.id!==me&&e.chassis).map(e=>up(e.chassis)));
   return STOCKV.filter(v=>!(v[3]&&used.has(v[3])))}
+function staffCalc(){const f=$('#sform'); if(!f) return; const t=num(f.price.value)+num(f.extra.value);
+  $('#sT').textContent=rs(t); $('#sD').textContent=rs(t-num(f.amount.value)-num(f.exValue.value)-num(f.down.value))}
 function staffDl(){const b=$('#sdlS'); if(!b) return; const A=stAvail(), t=$('#sstk');
+  const r=$('#srcv'); if(r){const v=r.value; r.innerHTML='<option value="">Business (cash / bank)</option>'+STOCKP.map(([id,n])=>`<option value="${esc(id)}">Partner – ${esc(n)}</option>`).join(''); r.value=v}
   if(t) t.innerHTML=STOCKV.length?`📦 ${A.length} vehicles in stock to choose from`:'<span style="color:var(--red)">⚠ Stock list not received yet — the owner must open the app once (new version) and the Firebase Rules must allow “stockview”.</span>';
   b.innerHTML=dl('sdlP',[...new Set(A.map(v=>v[0]).filter(Boolean))])+dl('sdlC',A.map(v=>v[3]).filter(Boolean))}
 function stFill(v){const f=$('#sform'); if(!v||!f) return; f.model.value=[v[1],v[2]].filter(Boolean).join(' '); f.chassis.value=v[3]||v[4]; if(!f.pchallan.value&&v[0]) f.pchallan.value=v[0];
@@ -2603,8 +2623,8 @@ function staffEdit(id){
   if(staffTab==='fin'){ const f=$('#fform'); f.challan.value=e.challan; f.challan.readOnly=true; staffFinLoad();
     $('#shint').innerHTML+=` <a href="#" style="color:var(--red)" onclick="staffDel('${id}');return false">Delete this entry</a>`; scrollTo({top:0,behavior:'smooth'}); return }
   const f=$('#sform'); f.eid.value=id;
-  ['challan','date','pchallan','name','phone','model','chassis','down','amount','financer','exReg','exModel','exValue'].forEach(k=>{f[k].value=['down','amount','exValue'].includes(k)?(num(e[k])||''):(e[k]??'')});
-  f.challan.readOnly=true;
+  STF_S.forEach(k=>{if(!f[k]) return; const v=STF_N.includes(k)?(num(e[k])||''):(e[k]??''); if(f[k].tagName==='SELECT'){ if(v!=='') f[k].value=v } else f[k].value=v});
+  f.challan.readOnly=true; staffCalc();
   $('#shint').innerHTML=`Changing sale challan <b>${esc(e.challan)}</b>. <a href="#" style="color:var(--red)" onclick="staffDel('${id}');return false">Delete this entry</a>`;
   scrollTo({top:0,behavior:'smooth'});
 }
@@ -2624,8 +2644,10 @@ function staffSave(ev){
   const exr=up(d.exReg), dx=exr&&FINQ.find(x=>x.id!==id&&up(x.exReg)===exr);
   if(dx&&!confirm(`⚠ Possible DOUBLE ENTRY\n\nOld vehicle ${exr} is already entered with sale challan ${dx.challan} (${dx.name}).\n\nSave anyway?`)) return;
   if((exr||d.exModel)&&num(d.exValue)<=0&&!confirm('Old vehicle value is empty. Save anyway?')) return;
-  const rec={challan:ex?ex.challan:txt(d.challan).toUpperCase(),date:d.date,pchallan:txt(d.pchallan).toUpperCase(),name:txt(d.name),phone:txt(d.phone),model:txt(d.model),chassis:chs,
-    down:num(d.down),amount:num(d.amount),financer:txt(d.financer),exReg:exr,exModel:txt(d.exModel),exValue:num(d.exValue),by:cloudEmail,at:FB.F.serverTimestamp()};
+  if(num(d.price)<=0&&!confirm('Vehicle price is empty. Save anyway?')) return;
+  const rec={challan:ex?ex.challan:txt(d.challan).toUpperCase(),date:d.date,pchallan:txt(d.pchallan).toUpperCase(),name:txt(d.name),rel:d.rel||'S/o',relName:txt(d.relName),phone:txt(d.phone),address:txt(d.address),
+    price:num(d.price),extra:num(d.extra),model:txt(d.model),chassis:chs,down:num(d.down),mode:d.mode||'Cash',ref:txt(d.ref),rcvBy:d.rcvBy||'',notes:txt(d.notes),
+    amount:num(d.amount),financer:txt(d.financer),exReg:exr,exModel:txt(d.exModel),exValue:num(d.exValue),by:cloudEmail,at:FB.F.serverTimestamp()};
   if(!ex) Object.assign(rec,{recd:false,recdAmt:0,recdDate:''});
   FB.F.setDoc(finRef(id),rec,{merge:true}).catch(e=>toast('⚠ Not saved: '+(e.code||e.message)));
   toast(navigator.onLine?'Saved ✓':'Saved – will sync when online'); staffView();
