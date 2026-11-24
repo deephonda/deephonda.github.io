@@ -572,7 +572,7 @@ function salesTable(rows,summary){
     <td class="num">${finCellN(s)}</td>
     <td class="num">${recCell(s)}</td>
     <td class="num">${diffCell(s)}</td>
-    <td class="wrap" style="min-width:130px">${num(s.exchangeValue)>0?(o=>`<b>${rs(s.exchangeValue)}</b><div class="sub2">${esc(s.exchange||'')}${s.exchangeReg?' · '+esc(s.exchangeReg):''}</div>${o?`<a href="#" onclick="go('old');return false"><span class="pill ${o.status==='sold'?'sold':'in'}">${o.status==='sold'?'Sold '+fd(o.soldDate):'In hand'}</span></a>`:''}`)((DB.oldveh||[]).find(x=>x.srcSaleId===s.id)):'<span class="muted">—</span>'}</td>
+    <td class="wrap" style="min-width:130px">${hasEx(s)?(o=>`<b>${rs(s.exchangeValue)}</b><div class="sub2">${esc(s.exchange||'')}${s.exchangeReg?' · '+esc(s.exchangeReg):''}</div>${o?`<a href="#" onclick="go('old');return false"><span class="pill ${o.status==='sold'?'sold':'in'}">${o.status==='sold'?'Sold '+fd(o.soldDate):'In hand'}</span></a>`:''}`)((DB.oldveh||[]).find(x=>x.srcSaleId===s.id)):'<span class="muted">—</span>'}</td>
     <td class="num">${rs(saleReceived(s))}${num(s.exchangeValue)?`<div class="sub2">+ old bike ${rs(s.exchangeValue)}</div>`:''}</td>
     <td style="white-space:nowrap">${mwCell(s)}</td>
     <td class="num">${due>0.5?`<span class="pill due">${rs(due)}</span>`:'<span class="pill in">Paid</span>'}</td></tr>`}).join('')}</tbody>
@@ -590,6 +590,23 @@ function salesList(){
   const q=salesQ.toLowerCase();
   $('#salesList').innerHTML=salesTable(DB.sales.filter(s=>(!salesW||(moneyWith(s)[salesW==='biz'?'':salesW]||0)>0.5)).filter(s=>!q||[s.name,s.phone,s.chassis,s.engine,s.model,s.inv,s.address,s.schallan].join(' ').toLowerCase().includes(q)).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.inv-a.inv),true);
 }
+const hasEx=s=>!!(txt(s.exchange)||txt(s.exchangeReg)||num(s.exchangeValue));
+function setExchange(id){
+  const s=DB.sales.find(x=>x.id===id); if(!s) return;
+  openDlg('Old bike taken in exchange – '+s.name,`<form id="fex" class="grid">
+    <label>Old bike model<input name="exchange" value="${esc(s.exchange)}" placeholder="e.g. Hero Splendor 2016"></label>
+    <label>Old bike number<input name="exchangeReg" value="${esc(s.exchangeReg)}" placeholder="HR02AB1234" style="text-transform:uppercase"></label>
+    <label>Value deducted from price ₹<input name="exchangeValue" inputmode="decimal" value="${num(s.exchangeValue)||''}"></label></form>
+    <p class="note">To remove, clear all three and Save.</p>`,
+  `<button class="btn plain" onclick="viewSale('${id}')">Back</button><button class="btn" onclick="saveExchange('${id}')">Save</button>`);
+}
+function saveExchange(id){
+  const s=DB.sales.find(x=>x.id===id), d=formData($('#fex')), reg=txt(d.exchangeReg).toUpperCase();
+  const dup=reg&&DB.sales.find(x=>x.id!==id&&txt(x.exchangeReg).toUpperCase()===reg);
+  if(dup&&!confirm(`⚠ Possible DOUBLE ENTRY\n\nOld bike ${reg} is already taken in the sale of ${dup.name} (${fd(dup.date)}).\n\nSave anyway?`)) return;
+  if((reg||d.exchange)&&num(d.exchangeValue)<=0&&!confirm('Value deducted is empty. Save anyway?')) return;
+  Object.assign(s,{exchange:txt(d.exchange),exchangeReg:reg,exchangeValue:num(d.exchangeValue)}); save(); render(); viewSale(id); toast('Old bike details saved');
+}
 function viewSale(id){
   const s=DB.sales.find(x=>x.id===id); if(!s) return; const due=saleDue(s);
   openDlg(`Sale #${s.inv} – ${s.name}`,`
@@ -598,7 +615,7 @@ function viewSale(id){
   <tr><td class="muted">Price + extra</td><td>${rs(s.price)} + ${rs(s.extra)} = <b>${rs(s.total)}</b></td></tr>
   <tr><td class="muted">Finance</td><td style="white-space:normal">${num(s.finance)?`Bill: <b>${rs(s.finance)}</b>`:'<span class="muted">amount not entered</span>'}${s.financer?' · '+esc(s.financer):''} <button class="btn plain sm" onclick="setFinance('${s.id}')">${num(s.finance)?'Change':'+ Fill'}</button>
     ${num(s.finance)?(s.financeReceived?`<br>Received <b>${rs(finRecd(s))}</b> · ${fd(s.financeRecdDate||'')} <span class="pill open">to dealer a/c</span> ${diffPill(finDiff(s))||'<span class="pill in">Full</span>'}${s.financeNote?`<div class="muted" style="font-size:12px">${esc(s.financeNote)}</div>`:''} <button class="btn plain sm" onclick="financeRecv('${s.id}')">Change</button>`:`<br><span class="pill due">pending</span> <button class="btn sm" onclick="financeRecv('${s.id}')">Mark finance received</button>`):''}</td></tr>
-  ${s.exchangeValue?`<tr><td class="muted">Exchange</td><td>${esc(s.exchange)} · ${rs(s.exchangeValue)}</td></tr>`:''}
+  <tr><td class="muted">Old bike (exchange)</td><td style="white-space:normal">${hasEx(s)?`<b>${esc(s.exchange)||'—'}</b> · No. <b class="mono">${esc(s.exchangeReg)||'—'}</b><br>Value deducted: <b>${rs(s.exchangeValue)}</b>`:'<span class="muted">None</span>'} <button class="btn plain sm" onclick="setExchange('${s.id}')">${hasEx(s)?'Change':'+ Add'}</button></td></tr>
   <tr><td class="muted">Payments</td><td>${s.payments.length?s.payments.map(p=>`${fd(p.date)} · ${esc(p.mode)} · <b>${rs(p.amount)}</b> ${esc(p.ref)}${withP(p.by)}`).join('<br>'):'—'}</td></tr>
   <tr><td class="muted">Balance due</td><td>${due>0.5?`<span class="pill due">${rs(due)}</span>`:'<span class="pill in">Fully paid</span>'}</td></tr>
   ${num(s.discount)?`<tr><td class="muted">Discount</td><td>${rs(s.discount)} ${esc(s.discountNote)}</td></tr>`:''}
@@ -685,7 +702,7 @@ function printSale(id){
   <table style="width:100%"><tr><th>Model</th><th>Colour</th><th>Chassis No</th><th>Engine No</th><th>Key</th></tr><tr><td>${esc(s.model)}</td><td>${esc(s.colour)}</td><td>${esc(s.chassis)}</td><td>${esc(s.engine)}</td><td>${esc(s.key)}</td></tr></table>
   <table style="width:60%;margin:14px 0 0 auto"><tr><td>Vehicle price</td><td class="num">${rs(s.price)}</td></tr>${s.extra?`<tr><td>Accessories / extra</td><td class="num">${rs(s.extra)}</td></tr>`:''}
   <tr><td><b>Total</b></td><td class="num"><b>${rs(s.total)}</b></td></tr>${s.finance?`<tr><td>Finance (${esc(s.financer)})</td><td class="num">${rs(s.finance)}</td></tr>`:''}
-  ${s.exchangeValue?`<tr><td>Exchange: ${esc(s.exchange)}</td><td class="num">${rs(s.exchangeValue)}</td></tr>`:''}
+  ${hasEx(s)?`<tr><td>Old vehicle in exchange: ${esc(s.exchange)}${s.exchangeReg?' ('+esc(s.exchangeReg)+')':''}</td><td class="num">${rs(s.exchangeValue)}</td></tr>`:''}
   ${s.payments.map(p=>`<tr><td>Received ${fd(p.date)} (${esc(p.mode)}${p.ref?' '+esc(p.ref):''})</td><td class="num">${rs(p.amount)}</td></tr>`).join('')}
   <tr><td><b>Balance due</b></td><td class="num"><b>${rs(Math.max(0,saleDue(s)))}</b></td></tr></table>
   <div class="sign"><div>Customer signature</div><div>For ${esc(S.name)}</div></div></div>`;
