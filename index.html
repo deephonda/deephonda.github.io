@@ -414,10 +414,10 @@ function moneyWith(s){const m={}; (s.payments||[]).forEach(p=>{const k=p.by||'';
 const mwName=k=>k?pName(k):'Business';
 // Dropdown in the sale register: choose who has the customer's money (and the finance money) for this sale.
 function mwSel(cur,on,mixed){
-  return `<select style="width:auto;padding:3px 6px;font-size:13px;${cur?'background:#e8f0fe;color:#1a56c4;font-weight:600':'background:#e7f6ec;color:#1a7f37;font-weight:600'}" onclick="event.stopPropagation()" onchange="${on}">${mixed?'<option value="*" selected>Mixed</option>':''}<option value="" ${!mixed&&!cur?'selected':''}>Business</option>${DB.partners.map(p=>`<option value="${p.id}" ${!mixed&&cur===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`;
+  return `<select style="width:auto;padding:3px 6px;font-size:13px;${cur?'background:#e8f0fe;color:#1a56c4;font-weight:600':'background:#e7f6ec;color:#1a7f37;font-weight:600'}" onclick="event.stopPropagation()" onchange="${on}">${mixed?'<option value="*" selected>Mixed</option>':''}<option value="" ${!mixed&&!cur?'selected':''}>Business</option>${holders().map(p=>`<option value="${p.id}" ${!mixed&&cur===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>`;
 }
 function mwCell(s){
-  if(!DB.partners.length) return (t=>t||'<span class="muted">—</span>')(mwText(s));
+  if(!holders().length) return (t=>t||'<span class="muted">—</span>')(mwText(s));
   const P=(s.payments||[]).filter(p=>num(p.amount)>0), out=[];
   if(P.length){const ks=[...new Set(P.map(p=>p.by||''))], amt=P.reduce((a,p)=>a+num(p.amount),0);
     out.push(`<div style="margin-bottom:3px">${mwSel(ks[0],`setSaleBy('${s.id}',this.value)`,ks.length>1)} <span style="font-size:13px">${rs(amt)}</span></div>`)}
@@ -460,7 +460,7 @@ function newSale(stockId,enqId){
     <label>Paid now – amount<input name="paid" inputmode="decimal" oninput="saleCalc()"></label>
     <label>Paid by<select name="mode"><option>Cash</option><option>Cheque</option><option>UPI</option><option>Bank</option></select></label>
     <label>Cheque / UTR no<input name="ref"></label>
-    ${DB.partners.length?recvBy(''):''}
+    ${holders().length?recvBy(''):''}
     <label class="span2">Notes<input name="notes"></label>
   </form>${dl('dlFin',[...new Set(DB.sales.map(s=>s.financer).filter(Boolean))])}
   <div class="card" style="margin:12px 0 0;background:#fafaf9"><div class="row"><div class="grow">Total: <b id="cT">₹0</b></div><div class="grow">Balance due: <b id="cD">₹0</b></div></div></div>`,
@@ -483,7 +483,7 @@ function saveSale(enqId){
   if(enqId){const e=DB.enquiries.find(x=>x.id===enqId); if(e) e.status='Sold'}
   save(); dlg.close(); toast('Sale saved · Invoice #'+inv); render(); viewSale(id);
 }
-const recvBy=(sel,name='by',label='Money received by')=>`<label>${label}<select name="${name}"><option value="">Business (cash / bank)</option>${DB.partners.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>Partner – ${esc(p.name)}</option>`).join('')}</select></label>`;
+const recvBy=(sel,name='by',label='Money received by')=>`<label>${label}<select name="${name}"><option value="">Business (cash / bank)</option>${holders().map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(hLabel(p))}</option>`).join('')}</select></label>`;
 const withP=by=>by?` <span class="pill open">with ${esc(pName(by))}</span>`:'';
 function addPayment(sale,p){
   const pid=uid(); if(!p.by) delete p.by; sale.payments.push({id:pid,...p});
@@ -494,7 +494,7 @@ function receivePay(id){
   const s=DB.sales.find(x=>x.id===id);
   openDlg('Receive payment – '+s.name,`<p class="muted" style="margin-top:0">Balance due: <b>${rs(saleDue(s))}</b></p><form id="fp" class="grid">
     <label>Date<input type="date" name="date" value="${today()}"></label><label>Amount<input name="amount" inputmode="decimal" value="${Math.max(0,Math.round(saleDue(s)))}"></label>
-    <label>Mode<select name="mode"><option>Cash</option><option>Cheque</option><option>UPI</option><option>Bank</option></select></label><label>Cheque / UTR no<input name="ref"></label>${DB.partners.length?recvBy(''):''}</form>`,
+    <label>Mode<select name="mode"><option>Cash</option><option>Cheque</option><option>UPI</option><option>Bank</option></select></label><label>Cheque / UTR no<input name="ref"></label>${holders().length?recvBy(''):''}</form>`,
   `<button class="btn" onclick="const d=formData($('#fp'));if(num(d.amount)<=0)return;if(!dupConfirm(DB.daybook.filter(x=>x.saleId==='${id}'&&!x.fin&&x.date===(d.date||today())&&Math.round(num(x.amount))===Math.round(num(d.amount))),'A payment of the same amount on the same date for this sale'))return;addPayment(DB.sales.find(x=>x.id==='${id}'),d);save();dlg.close();render();toast('Payment recorded in Day Book')">Save payment</button>`);
 }
 const finRecd=s=>s.financeReceived?(s.financeRecdAmt!=null&&s.financeRecdAmt!==''?num(s.financeRecdAmt):num(s.finance)):0;
@@ -560,7 +560,7 @@ function salesTable(rows,summary){
     <div class="stat"><div class="k">Finance short / excess</div><div class="v" style="color:${tD<-0.5?'var(--red)':tD>0.5?'var(--green)':'inherit'}">${Math.abs(tD)<0.5?'₹0':(tD<0?'− ':'+ ')+rs(Math.abs(tD))}</div></div>
     <div class="stat"><div class="k">Customer dues</div><div class="v" style="color:var(--red)">${rs(sum(s=>Math.max(0,saleDue(s))))}</div></div>
     <div class="stat" style="cursor:pointer" onclick="go('old')"><div class="k">Old bikes taken →</div><div class="v">${rows.filter(s=>num(s.exchangeValue)>0).length}</div><div class="sub2">${rs(sum(s=>num(s.exchangeValue)))} · ${(DB.oldveh||[]).filter(o=>o.status!=='sold').length} in hand</div></div></div>
-    ${DB.partners.length?(t=>`<div class="stats" style="margin-bottom:14px">${[['biz',''],...DB.partners.map(p=>[p.id,p.id])].map(([f,k])=>`<div class="stat" style="cursor:pointer;${salesW===f?'outline:2px solid var(--red)':''}" onclick="salesW=salesW==='${f}'?'':'${f}';vSales()"><div class="k">Sale money with ${esc(mwName(k))}</div><div class="v" style="color:${k?'#1a56c4':'var(--green)'}">${rs(t[k]||0)}</div><div class="sub2">${rows.filter(s=>(moneyWith(s)[k]||0)>0.5).length} sales · click to see list</div></div>`).join('')}</div>`)(rows.reduce((t,s)=>{for(const [k,v] of Object.entries(moneyWith(s))) t[k]=(t[k]||0)+v; return t},{})):''}`:'';
+    ${holders().length?(t=>`<div class="stats" style="margin-bottom:14px">${[['biz',''],...holders().filter(p=>!isStaffH(p.id)||rows.some(s=>(s.payments||[]).some(x=>x.by===p.id))).map(p=>[p.id,p.id])].map(([f,k])=>`<div class="stat" style="cursor:pointer;${salesW===f?'outline:2px solid var(--red)':''}" onclick="salesW=salesW==='${f}'?'':'${f}';vSales()"><div class="k">Sale money with ${esc(mwName(k))}</div><div class="v" style="color:${k?'#1a56c4':'var(--green)'}">${rs(t[k]||0)}</div><div class="sub2">${rows.filter(s=>(moneyWith(s)[k]||0)>0.5).length} sales · click to see list</div></div>`).join('')}</div>`)(rows.reduce((t,s)=>{for(const [k,v] of Object.entries(moneyWith(s))) t[k]=(t[k]||0)+v; return t},{})):''}`:'';
   return cards+`<div class="tablewrap"><table class="nice"><thead><tr><th>Sale Challan</th><th>Purch. Challan</th><th>Date</th><th>Customer</th><th>Vehicle</th><th class="num">Total</th><th class="num">Finance</th><th class="num">Finance received</th><th class="num">Short / Excess</th><th>Old bike (exchange)</th><th class="num">From customer</th><th>Money with</th><th class="num">Due</th></tr></thead><tbody>
   ${rows.map(s=>{const due=saleDue(s);return `<tr class="click" title="Click to open" onclick="if(!event.target.closest('button,a,select'))viewSale('${s.id}')">
     <td><b>${esc(s.schallan)||'<span class="muted">—</span>'}</b><div class="sub2">Rcpt #${s.inv}</div></td>
@@ -582,7 +582,7 @@ function salesTable(rows,summary){
 function vSales(){
   $('#app').innerHTML=`<div class="card"><div class="row" style="margin-bottom:14px;row-gap:10px"><h2 class="grow" style="margin:0;min-width:160px">Sale register</h2>
   <input placeholder="Search name / mobile / chassis…" style="max-width:260px" value="${esc(salesQ)}" oninput="salesQ=this.value;salesList()">
-  ${DB.partners.length?`<select style="width:auto" onchange="salesW=this.value;salesList()"><option value="">Money with: all</option><option value="biz" ${salesW==='biz'?'selected':''}>Money with: Business</option>${DB.partners.map(p=>`<option value="${p.id}" ${salesW===p.id?'selected':''}>Money with: ${esc(p.name)}</option>`).join('')}</select>`:''}
+  ${holders().length?`<select style="width:auto" onchange="salesW=this.value;salesList()"><option value="">Money with: all</option><option value="biz" ${salesW==='biz'?'selected':''}>Money with: Business</option>${holders().map(p=>`<option value="${p.id}" ${salesW===p.id?'selected':''}>Money with: ${esc(p.name)}</option>`).join('')}</select>`:''}
   <button class="btn plain sm" onclick="csv('sales')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('sales')">📄 PDF</button>${impBtn('sales')}${photoBtn('aiSale','Sales from bill photos (many at once)')}<button class="btn" onclick="newSale()">+ New sale</button></div><div id="salesList"></div></div>`;
   salesList(); const b=dupBanner()+finBanner(); if(b) $('#app').insertAdjacentHTML('afterbegin',b);
 }
@@ -628,7 +628,7 @@ function viewSale(id){
 function editSale(id){
   const s=DB.sales.find(x=>x.id===id); if(!s) return; const st=DB.stock.find(x=>x.id===s.stockId)||{};
   const pay=(s.payments||[]).map((p,i)=>`<tr data-pid="${esc(p.id||'')}"><td><input type="date" name="pdate" value="${esc(p.date)}"></td><td><input name="pamt" inputmode="decimal" value="${num(p.amount)}" style="width:100px"></td>
-    <td><select name="pmode" style="width:auto">${opts(['Cash','Cheque','UPI','Bank'],p.mode)}</select></td><td><input name="pref" value="${esc(p.ref)}" style="width:110px"></td>${DB.partners.length?`<td><select name="pby" style="width:auto"><option value="">Business</option>${DB.partners.map(x=>`<option value="${x.id}" ${p.by===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></td>`:''}
+    <td><select name="pmode" style="width:auto">${opts(['Cash','Cheque','UPI','Bank'],p.mode)}</select></td><td><input name="pref" value="${esc(p.ref)}" style="width:110px"></td>${holders().length?`<td><select name="pby" style="width:auto"><option value="">Business</option>${holders().map(x=>`<option value="${x.id}" ${p.by===x.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></td>`:''}
     <td><label style="flex-direction:row;align-items:center;gap:4px;font-weight:400"><input type="checkbox" name="pdel" style="width:auto"> Delete</label></td></tr>`).join('');
   openDlg(`Edit sale – ${s.name}`,`<form id="fes" class="grid">
     <label>Sale Challan No<input name="schallan" value="${esc(s.schallan)}"></label>
@@ -653,7 +653,7 @@ function editSale(id){
     <label>Exchange value<input name="exchangeValue" inputmode="decimal" value="${num(s.exchangeValue)||''}"></label>
     <label class="span2">Notes<input name="notes" value="${esc(s.notes)}"></label>
   </form>${dl('dlModels',DB.settings.models)}${dl('dlCols',DB.settings.colours)}
-  ${pay?`<h3 style="font-size:14px;margin:16px 0 6px">Payments received from customer</h3><div class="tablewrap imp"><table id="espT"><tr><th>Date</th><th>Amount ₹</th><th>Mode</th><th>Cheque / UTR</th>${DB.partners.length?'<th>Received by</th>':''}<th></th></tr>${pay}</table></div>
+  ${pay?`<h3 style="font-size:14px;margin:16px 0 6px">Payments received from customer</h3><div class="tablewrap imp"><table id="espT"><tr><th>Date</th><th>Amount ₹</th><th>Mode</th><th>Cheque / UTR</th>${holders().length?'<th>Received by</th>':''}<th></th></tr>${pay}</table></div>
   <p class="note">Changes here also update the Day Book. Finance received is edited separately (“Finance” row → Change).</p>`:''}`,
   `<button class="btn plain" onclick="viewSale('${id}')">Cancel</button><button class="btn" onclick="saveEditSale('${id}')">Save changes</button>`);
   dlg.style.maxWidth='900px'; dlg.addEventListener('close',()=>dlg.style.maxWidth='',{once:true});
@@ -739,8 +739,8 @@ function dayExtra(type,head,x={}){
   if(head===H.rent) L.push(`<label>Paid to (shop owner)<select name="payee">${selOf(owners(),x.payee)}</select></label>`,month);
   if(head===H.sal) L.push(`<label>Paid to (employee)<select name="payee">${selOf(emps(),x.payee)}</select></label>`,`<label>Payment type<select name="ptype">${opts(['Salary','Advance','Bonus'],x.ptype||'Salary')}</select></label>`,month);
   if(EXP_HEADS.includes(head)||head===H.spareSup) L.push(`<label>Shop / vendor<input name="vendor" value="${v('vendor')}" list="dlVend"></label>`,`<label>Bill no<input name="bill" value="${v('bill')}"></label>`);
-  if(isCapH(head)) L.push(DB.partners.length?`<label>Partner<select name="pid">${selOf(DB.partners,x.pid)}</select></label>`:`<p class="note" style="margin:0;align-self:end;color:var(--red)">Add partners first (Accounts → Partners).</p>`);
-  else L.push(`<label>${type==='in'?'Received by':'Paid by'}<select name="by"><option value="">Business (cash / bank)</option>${DB.partners.map(p=>`<option value="${p.id}" ${x.by===p.id?'selected':''}>Partner – ${esc(p.name)} (${type==='in'?'kept it':'own pocket'})</option>`).join('')}</select></label>`);
+  if(isCapH(head)) L.push(DB.partners.length?`<label>${head===H.hand?'Handed over by':'Partner'}<select name="pid">${selOf(head===H.hand?holders():DB.partners,x.pid)}</select></label>`:`<p class="note" style="margin:0;align-self:end;color:var(--red)">Add partners first (Accounts → Partners).</p>`);
+  else L.push(`<label>${type==='in'?'Received by':'Paid by'}<select name="by"><option value="">Business (cash / bank)</option>${holders().map(p=>`<option value="${p.id}" ${x.by===p.id?'selected':''}>${esc(hLabel(p))} (${type==='in'?'kept it':'own pocket'})</option>`).join('')}</select></label>`);
   return L.join('');
 }
 function dayForm(x={}){
@@ -1037,7 +1037,7 @@ function oldEdit(id){
     <label>Mobile<input name="fromPhone" value="${esc(o.fromPhone)}" ${linked?'disabled':''}></label>
     <label>Date taken<input type="date" name="date" value="${esc(o.date||today())}" ${linked?'disabled':''}></label>
     <label>Cost (price we gave) ₹<input name="cost" inputmode="decimal" value="${num(o.cost)||''}" ${linked?'disabled':''}></label>
-    ${linked?'':`<label>Paid by<select name="mode">${opts(['Cash','Bank','UPI','Cheque'],pd?.mode||'Cash')}</select></label>${DB.partners.length?recvBy(pd?.by||'','by','Paid by (who)'):''}`}
+    ${linked?'':`<label>Paid by<select name="mode">${opts(['Cash','Bank','UPI','Cheque'],pd?.mode||'Cash')}</select></label>${holders().length?recvBy(pd?.by||'','by','Paid by (who)'):''}`}
     <label>Repair / other cost ₹<input name="repair" inputmode="decimal" value="${num(o.repair)||''}" placeholder="for profit calculation"></label>
     <label class="span2">Note (RC, NOC, papers…)<input name="note" value="${esc(o.note)}"></label></form>
     ${linked?'<p class="note">This vehicle came in exchange. Name, date and cost come from the sale – change them in the sale (Edit → Exchange value).</p>':'<p class="note">The amount paid is added to the Day Book as “Old vehicle purchase”. Repair cost is only for profit calculation – enter the actual repair payment in the Day Book (Workshop Expenses).</p>'}`,
@@ -1071,7 +1071,7 @@ function oldSell(id){
     <label class="span2">Buyer address<input name="buyerAddr" value="${esc(o.buyerAddr)}"></label>
     <label>Money received now ₹<input name="recd" inputmode="decimal" value="${e?num(e.amount):''}"></label>
     <label>Mode<select name="mode">${opts(['Cash','UPI','Bank','Cheque'],e?.mode||'Cash')}</select></label>
-    ${DB.partners.length?recvBy(e?.by||''):''}
+    ${holders().length?recvBy(e?.by||''):''}
     <label class="span2">Note<input name="soldNote" value="${esc(o.soldNote)}"></label></form><p id="ovp" style="margin:8px 0 0"></p>`,
   `${o.status==='sold'?`<button class="btn plain" style="margin-right:auto;color:var(--red)" onclick="oldUnsell('${id}')">Undo sale</button>`:''}<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="oldSellSave('${id}')">Save</button>`);
   $('#fos [name=soldPrice]').dispatchEvent(new Event('input'));
@@ -1088,7 +1088,7 @@ function oldSellSave(id){
 function oldRecv(id){
   const o=DB.oldveh.find(x=>x.id===id);
   openDlg('Receive – '+o.buyer,`<p class="muted" style="margin-top:0">Due: <b>${rs(ovDue(o))}</b></p><form id="for" class="grid"><label>Date<input type="date" name="date" value="${today()}"></label><label>Amount<input name="amount" inputmode="decimal" value="${Math.round(ovDue(o))}"></label>
-    <label>Mode<select name="mode">${opts(['Cash','UPI','Bank','Cheque'],'Cash')}</select></label>${DB.partners.length?recvBy(''):''}</form>`,
+    <label>Mode<select name="mode">${opts(['Cash','UPI','Bank','Cheque'],'Cash')}</select></label>${holders().length?recvBy(''):''}</form>`,
   `<button class="btn" onclick="const d=formData($('#for'));if(num(d.amount)<=0)return;const o=DB.oldveh.find(x=>x.id==='${id}');if(!dupConfirm(DB.daybook.filter(x=>x.oldId===o.id&&x.type==='in'&&x.date===(d.date||today())&&Math.round(num(x.amount))===Math.round(num(d.amount))),'A receipt of the same amount on the same date for this vehicle'))return;DB.daybook.push({id:uid(),created:Date.now(),type:'in',oldId:o.id,ovKind:'recv',date:d.date||today(),head:'Old vehicle sale',amount:num(d.amount),mode:d.mode,particulars:(o.model+' '+(o.regNo||'')+' – balance from '+o.buyer),...(d.by?{by:d.by}:{})});save();dlg.close();render();toast('Received')">Save</button>`);
 }
 function oldUnsell(id){ if(!confirm('Undo this sale? The money entries for it will be removed from the Day Book.')) return; const o=DB.oldveh.find(x=>x.id===id);
@@ -1294,7 +1294,7 @@ const pendPill=p=>p.pending>0.5?`<span class="pill due">${rs(p.pending)} pending
 
 // Who is holding business money: what a partner received and kept, less what he paid for the business or handed back.
 function holdings(){
-  return DB.partners.map(p=>{const E=DB.daybook.filter(d=>d.by===p.id||(d.head===H.hand&&d.pid===p.id)), S=f=>E.filter(f).reduce((a,d)=>a+num(d.amount),0);
+  return holders().filter(p=>!isStaffH(p.id)||DB.daybook.some(d=>d.by===p.id||d.pid===p.id)).map(p=>{const E=DB.daybook.filter(d=>d.by===p.id||(d.head===H.hand&&d.pid===p.id)), S=f=>E.filter(f).reduce((a,d)=>a+num(d.amount),0);
     const sale=S(d=>d.saleId&&!d.fin&&d.by===p.id), fin=S(d=>d.saleId&&d.fin&&d.by===p.id), other=S(d=>!d.saleId&&d.type==='in'&&d.by===p.id),
       paid=S(d=>d.type==='out'&&d.by===p.id), hand=S(d=>d.head===H.hand);
     return {p,sale,fin,other,paid,hand,hold:sale+fin+other-paid-hand}});
@@ -1317,7 +1317,7 @@ function accDealer(){
   </div>
   <div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Dealer payments</h2>
     <label style="flex-direction:row;align-items:center;gap:8px">Dealer name <input value="${esc(dn)}" placeholder="e.g. Honda distributor name" style="width:220px" onchange="DB.settings.dealerName=txt(this.value);save();toast('Dealer name saved')"></label>
-    <select style="width:auto" onchange="dpF=this.value;vAcc()"><option value="">All</option><option value="biz" ${dpF==='biz'?'selected':''}>Business</option><option value="fin" ${dpF==='fin'?'selected':''}>Finance (direct)</option>${DB.partners.map(p=>`<option value="${p.id}" ${dpF===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
+    <select style="width:auto" onchange="dpF=this.value;vAcc()"><option value="">All</option><option value="biz" ${dpF==='biz'?'selected':''}>Business</option><option value="fin" ${dpF==='fin'?'selected':''}>Finance (direct)</option>${holders().map(p=>`<option value="${p.id}" ${dpF===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
     ${newBtn('dealer')}<button class="btn plain sm" onclick="csv('dealer')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('dealer')">📄 PDF</button></div>
   ${(r=>r.length?`<div class="tablewrap"><table class="nice"><thead><tr><th>Date</th><th class="num">Amount</th><th>Mode</th><th>Paid by</th><th>UTR / Cheque</th><th>Against challan</th><th>Remarks</th><th></th></tr></thead><tbody>
     ${r.map(x=>`<tr><td>${fd(x.date)}</td><td class="num"><b>${rs(x.amount)}</b></td><td>${esc(x.mode)}</td><td>${byCell(x)}</td><td class="mono">${esc(x.ref)}</td><td>${esc(x.challans)}</td><td class="wrap">${esc(x.particulars)}${x.old?' <span class="pill lost">old</span>':''}</td><td>${editBtn(x)}</td></tr>`).join('')}</tbody>
@@ -1383,7 +1383,7 @@ function accExp(){
 }
 function accPartners(){
   const S=partnerSummary(), HD=holdings();
-  $('#acc').innerHTML=`${DB.partners.length?`<div class="card"><h2>Money with partners – who has how much</h2>
+  $('#acc').innerHTML=`${HD.length?`<div class="card"><h2>Money with partners & staff – who has how much</h2>
   <div class="tablewrap"><table class="nice"><thead><tr><th>Partner</th><th class="num">Sale money received</th><th class="num">Other money received</th><th class="num">Paid from own pocket</th><th class="num">Handed over to business</th><th>Position</th><th></th></tr></thead><tbody>
   ${HD.map(h=>`<tr><td><b>${esc(h.p.name)}</b></td><td class="num">${rs(h.sale)}</td><td class="num">${rs(h.other)}</td><td class="num">${rs(h.paid)}</td><td class="num">${rs(h.hand)}</td><td>${holdPill(h)}</td>
     <td><button class="btn plain sm" onclick="dayPreset={type:'in',head:H.hand,pid:'${h.p.id}'};go('day')">+ Handed over</button></td></tr>`).join('')}</tbody></table></div>
@@ -1601,7 +1601,12 @@ async function pdfExport(which){
 }
 
 /* ---------- partners ---------- */
-const pName=id=>DB.partners.find(p=>p.id===id)?.name||'?';
+const COLL=()=>{const S=DB.settings; if(!S.collectors) S.collectors=[{id:'c_gurvinder',name:'Gurvinder Singh'}]; return S.collectors};
+const holders=()=>[...DB.partners,...COLL()];
+const isStaffH=id=>COLL().some(c=>c.id===id);
+const hLabel=h=>(isStaffH(h.id)?'Staff – ':'Partner – ')+h.name;
+const hLed=id=>isStaffH(id)?`${pName(id)} A/c`:`${pName(id)} Capital A/c`;
+const pName=id=>DB.partners.find(p=>p.id===id)?.name||COLL().find(c=>c.id===id)?.name||'?';
 function ptRow(p){return `<div class="row pt" style="margin-bottom:6px;flex-wrap:nowrap"><input type="hidden" value="${esc(p.id||'')}"><input placeholder="Partner name" value="${esc(p.name)}" style="flex:3;min-width:0"><input placeholder="Share" inputmode="decimal" value="${esc(p.share??'')}" style="width:80px"><span>%</span></div>`}
 function savePartners(){
   const rows=[...document.querySelectorAll('#ptRows .pt')].map(r=>{const i=r.querySelectorAll('input');return {id:i[0].value||uid(),name:String(i[1].value).trim(),share:num(i[2].value)}});
@@ -1655,7 +1660,8 @@ For each sale:
 - paid_amount: money the customer paid (cash / down payment / advance); payment_mode; payment_ref (cheque no / UTR).
 - date as YYYY-MM-DD (Indian dates are day-month-year).
 - If the same bill appears twice (same bill number and chassis), list it once.
-- Leave a field empty ("" or 0) if it is not present or not readable. Never invent a value.`;
+- Leave a field empty ("" or 0) if it is not present. Never invent a value.
+- If you cannot read or understand an entry, or any word / name / number in it, do NOT guess: put "?" in that text field (e.g. particulars "? unclear item", customer_name "?"). Still list the entry. If an amount cannot be read, use 0.`;
     const d=await aiRun(a.key,a.parts,prompt,SALES_SCHEMA,'sales');
     if(!d.sales?.length) throw new Error('No sale bill found in these photos. Try again with clear, straight photos.');
     reviewSales(d.sales);
@@ -1691,9 +1697,11 @@ function reviewSales(L){
   ${dl('dlModels',DB.settings.models)}
   <p class="note">⚠ Check the names, numbers and amounts read by AI against the bills. Untick any sale you do not want to add.</p>`,
   `<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="saveSales()">Save all sales</button>`);
+  markQ('slT','price');
   dlg.style.maxWidth='1400px'; dlg.addEventListener('close',()=>dlg.style.maxWidth='',{once:true});
 }
 function saveSales(){
+  const q=qRows('slT'); if(q.length&&!confirm(`❓ Row ${q.join(', ')} still has "?" (AI could not read it).\n\nCorrect it first, or press OK to save as it is.`)) return;
   const L=window.__sales||[], out=[], bad=[], skipped=[];
   const used=new Set();
   [...document.querySelectorAll('#slT tr')].slice(1).forEach((tr,n)=>{
@@ -1745,44 +1753,68 @@ Extract every money transaction shown.
 - mode: UPI for UPI screenshots, Cheque for cheques, Bank for NEFT / RTGS / IMPS / bank transfer, otherwise Cash.
 - ref: bill no / cheque no / UTR / transaction id if shown, else "".
 - date as YYYY-MM-DD (Indian dates are day-month-year); for ditto use the date above; "" if not shown.
-- Skip total, balance and carried-forward lines. Never invent a value.`;
+- Skip total, balance and carried-forward lines. Never invent a value.
+- If you cannot read or understand an entry, or any word / name / number in it, do NOT guess: put "?" in that text field (e.g. particulars "? unclear item", vendor "?"). Still list the entry. If an amount cannot be read, use 0.`;
     const d=await aiRun(a.key,a.parts,prompt,PAY_SCHEMA,'payments');
     if(!d.entries?.length) throw new Error('No amount found in this photo. Try again with a clear, straight photo.');
     reviewPhotoPay(d.entries);
   }catch(e){aiFail(e)}
 }
+// Rows the AI could not read: highlight every "?" / empty amount, untick the row, and say so.
+function markQ(tid,amtName){
+  [...document.querySelectorAll(`#${tid} tr`)].slice(1).forEach(tr=>{
+    let q=false; tr.querySelectorAll('input:not([type=checkbox]),select').forEach(i=>{const bad=String(i.value).includes('?')||(i.name===amtName&&!num(i.value)); if(bad){q=true;i.style.background='#fff3c4';i.style.borderColor='var(--amber)'}});
+    if(q){ tr.style.background='#fffbea'; const c=tr.querySelector('input[type=checkbox]'); if(c) c.checked=false;
+      const last=tr.lastElementChild; if(last&&!last.querySelector('.qpill')) last.insertAdjacentHTML('afterbegin','<span class="pill due qpill">❓ Not clear – check</span> ') }
+  });
+}
+function qRows(tid){return [...document.querySelectorAll(`#${tid} tr`)].slice(1).map((tr,i)=>({tr,i})).filter(({tr})=>tr.querySelector('input[type=checkbox]')?.checked&&[...tr.querySelectorAll('input:not([type=checkbox])')].some(x=>String(x.value).includes('?'))).map(({i})=>i+1)}
 function reviewPhotoPay(E){
-  const dup=e=>DB.daybook.some(x=>x.date===(toISO(e.date)||today())&&x.type===e.direction&&Math.round(num(x.amount))===Math.round(num(e.amount)));
+  const kk=e=>[(toISO(e.date)||today()),e.direction==='in'?'in':'out',Math.round(num(e.amount))].join('|');
+  const dup=e=>DB.daybook.find(x=>[x.date,x.type,Math.round(num(x.amount))].join('|')===kk(e));
+  const twin=(e,i)=>E.findIndex((y,j)=>j<i&&kk(y)===kk(e));
   const sel=(n,arr,v,extra='')=>`<select name="${n}" style="width:auto" ${extra}>${arr.map(([k,l])=>`<option value="${esc(k)}" ${k===v?'selected':''}>${esc(l)}</option>`).join('')}</select>`;
   const hl=t=>(t==='in'?HEADS_IN:HEADS_OUT).filter(h=>!isCapH(h)).map(h=>[h,h]);
   const fixH=(t,h)=>hl(t).some(x=>x[0]===h)?h:(t==='in'?H.mrec:H.misc);
-  const byO=[['','Business'],...DB.partners.map(p=>[p.id,p.name+' (own pocket)'])];
-  openDlg(`${E.length} entries found in photo — check and Save`,`<div class="tablewrap imp"><table id="pyT"><tr><th></th><th>Date</th><th>In / Out</th><th>Head</th><th>Remarks</th><th>Amount ₹</th><th>Mode</th><th>Shop / vendor</th><th>Bill / Ref</th>${DB.partners.length?'<th>Paid by</th>':''}<th></th></tr>
-  ${E.map(e=>{const dp=dup(e), t=e.direction==='in'?'in':'out';return `<tr><td><input type="checkbox" ${dp?'':'checked'} style="width:auto"></td><td><input type="date" name="date" value="${esc(toISO(e.date)||today())}"></td>
+  const byO=[['','Business'],...holders().map(p=>[p.id,p.name+(isStaffH(p.id)?' (staff)':' (own pocket)')])];
+  openDlg(`${E.length} entries found in photo — check and Save`,`<div class="tablewrap imp"><table id="pyT"><tr><th></th><th>Date</th><th>In / Out</th><th>Head</th><th>Remarks</th><th>Amount ₹</th><th>Mode</th><th>Shop / vendor</th><th>Bill / Ref</th>${holders().length?'<th>Paid by</th>':''}<th></th></tr>
+  ${E.map((e,i)=>{const dp=dup(e), tw=twin(e,i), t=e.direction==='in'?'in':'out';return `<tr><td><input type="checkbox" ${dp||tw>=0?'':'checked'} style="width:auto"> <b>${i+1}</b></td><td><input type="date" name="date" value="${esc(toISO(e.date)||today())}"></td>
   <td>${sel('type',[['out','Payment (out)'],['in','Receipt (in)']],t,`onchange="const h=this.closest('tr').querySelector('[name=head]');h.innerHTML=(this.value==='in'?HEADS_IN:HEADS_OUT).filter(x=>!isCapH(x)).map(x=>'<option>'+x+'</option>').join('')"`)}</td>
   <td>${sel('head',hl(t),fixH(t,e.head))}</td><td><input name="particulars" value="${esc(e.particulars)}" style="min-width:180px"></td>
   <td><input name="amount" inputmode="decimal" value="${num(e.amount)||''}" style="width:100px"></td><td>${sel('mode',['Cash','Bank','UPI','Cheque'].map(m=>[m,m]),e.mode)}</td>
   <td><input name="vendor" value="${esc(e.vendor||'')}" style="width:130px"></td><td><input name="ref" value="${esc(e.ref)}" style="width:100px"></td>
-  ${DB.partners.length?`<td>${sel('by',byO,'')}</td>`:''}<td>${dp?'<span class="pill due">Possibly duplicate</span>':''}</td></tr>`}).join('')}</table></div>
-  <p class="note">⚠ Check the amount and head read by AI against the bill. Untick any entry you do not want. Customer payments for vehicles should be taken via “Receive” (Customer Dues / Sales) so their dues update.</p>`,
+  ${holders().length?`<td>${sel('by',byO,'')}</td>`:''}<td style="white-space:normal;min-width:190px">${dp?`<span class="pill due">⚠ Already in Day Book</span><div class="sub2">${fd(dp.date)} · ${esc(headOf(dp)||'')} · ${rs(dp.amount)} · ${esc(dp.particulars||'')}</div>`:tw>=0?`<span class="pill due">⚠ Same as row ${tw+1}</span>`:''}</td></tr>`}).join('')}</table></div>
+  <p class="note">❓ Yellow cells = AI could not read them clearly (marked “?”) — please fill them in. ⚠ Check the amount and head read by AI against the bill. Untick any entry you do not want. Customer payments for vehicles should be taken via “Receive” (Customer Dues / Sales) so their dues update.</p>`,
   `<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="savePhotoPay()">Save to Day Book</button>`);
+  markQ('pyT','amount');
   dlg.style.maxWidth='1240px'; dlg.style.width='96vw'; dlg.addEventListener('close',()=>{dlg.style.maxWidth='';dlg.style.width=''},{once:true});
 }
 function savePhotoPay(){
+  const q=qRows('pyT'); if(q.length&&!confirm(`❓ Row ${q.join(', ')} still has "?" (AI could not read it).\n\nCorrect it first, or press OK to save as it is.`)) return;
+  const noAmt=[...document.querySelectorAll('#pyT tr')].slice(1).map((tr,i)=>tr.querySelector('input[type=checkbox]').checked&&!num(tr.querySelector('[name=amount]').value)?i+1:0).filter(Boolean);
+  if(noAmt.length){alert(`Row ${noAmt.join(', ')}: amount is empty. Fill the amount or untick the row.`);return}
   const out=[];
   [...document.querySelectorAll('#pyT tr')].slice(1).forEach(tr=>{
     if(!tr.querySelector('input[type=checkbox]').checked) return;
     const g=n=>{const el=tr.querySelector(`[name=${n}]`);return el?txt(el.value):''}, a=num(g('amount'));
     if(a<=0) return;
-    const r={date:g('date')||today(),type:g('type'),head:g('head'),particulars:g('particulars'),mode:g('mode'),amount:a};
+    const r={_row:+(tr.querySelector('td b')?.textContent||0),date:g('date')||today(),type:g('type'),head:g('head'),particulars:g('particulars'),mode:g('mode'),amount:a};
     if(g('vendor')) r.vendor=g('vendor');
     if(g('ref')) r[EXP_HEADS.includes(r.head)||r.head===H.spareSup?'bill':'ref']=g('ref');
     if(g('by')) r.by=g('by');
     out.push(r);
   });
   if(!out.length){alert('No entry selected (or amount empty).');return}
-  const same=out.flatMap(r=>daySame(r)); if(!dupConfirm(same,'Entries like these')) return;
-  const keys=out.map(dupKey); if(new Set(keys).size<keys.length&&!confirm('⚠ Two of the selected entries are the same (date, amount, head). Save both?')) return;
+  const kk=r=>[r.date,r.type,Math.round(num(r.amount))].join('|'), msgs=[];
+  out.forEach((r,i)=>{
+    const ex=DB.daybook.find(x=>[x.date,x.type,Math.round(num(x.amount))].join('|')===kk(r));
+    const j=out.findIndex((y,k)=>k<i&&kk(y)===kk(r));
+    const me=`Row ${r._row}: ${fd(r.date)} · ${r.type==='in'?'Receipt':'Payment'} ${rs(r.amount)} · ${r.particulars||r.head}`;
+    if(ex) msgs.push(`${me}\n   → already in Day Book: ${fd(ex.date)} · ${headOf(ex)||''} · ${rs(ex.amount)} · ${ex.particulars||''}`);
+    else if(j>=0) msgs.push(`${me}\n   → same as Row ${out[j]._row} in this photo`);
+  });
+  if(msgs.length&&!confirm(`⚠ DOUBLE ENTRY – ${msgs.length} ${msgs.length>1?'entries':'entry'}\n\n${msgs.slice(0,8).join('\n\n')}${msgs.length>8?`\n\n…and ${msgs.length-8} more`:''}\n\nOK = save anyway · Cancel = go back and untick them`)) return;
+  out.forEach(r=>delete r._row);
   const t0=Date.now(); out.forEach((e,i)=>DB.daybook.push({id:uid(),created:t0+i,...e}));
   save(); dlg.close(); toast(`${out.length} entries added to Day Book`); render();
 }
@@ -1991,7 +2023,7 @@ function tallyVouchers(from,to){
       if(num(s.exchangeValue)>0) V.push({type:'Journal',date:s.date,id:'x'+s.id,nar:`Exchange ${s.exchange} – Sale #${s.inv}`,L:[[T.exchange,num(s.exchangeValue)],[P,-num(s.exchangeValue)]]});
     }
     for(const p of s.payments||[]) if(ins(p.date)&&num(p.amount)>0){
-      V.push({type:p.by?'Journal':'Receipt',date:p.date,id:'p'+p.id,nar:`Sale #${s.inv} – ${p.mode}${p.ref?' '+p.ref:''}${p.by?' · received by '+pName(p.by):''}`,L:[[p.by?`${pName(p.by)} Capital A/c`:modeL(p.mode),num(p.amount)],[P,-num(p.amount)]]});used=true}
+      V.push({type:p.by?'Journal':'Receipt',date:p.date,id:'p'+p.id,nar:`Sale #${s.inv} – ${p.mode}${p.ref?' '+p.ref:''}${p.by?' · received by '+pName(p.by):''}`,L:[[p.by?hLed(p.by):modeL(p.mode),num(p.amount)],[P,-num(p.amount)]]});used=true}
     if(num(s.discount)>0&&ins(s.date)){V.push({type:'Journal',date:s.date,id:'dc'+s.id,nar:`Discount – Sale #${s.inv}${s.discountNote?' · '+s.discountNote:''}`,L:[['Discount Allowed',num(s.discount)],[P,-num(s.discount)]]});used=true}
     if(s.financeReceived&&num(s.finance)>0){
       const fe=DB.daybook.find(d=>d.fin&&d.saleId===s.id), dt=fe?fe.date:s.date;
@@ -2008,13 +2040,13 @@ function tallyVouchers(from,to){
     V.push({type:'Purchase',date:a[0].date,id:'c'+a[0].id,ref:a[0].challan,party:T.supplier,nar:`Challan ${a[0].challan} · ${a.length} vehicle(s): `+a.map(s=>`${s.model} Ch ${s.chassis}`).join(', '),L});
   }
   const HL={[H.dealer]:T.supplier,[H.spareSup]:T.spareSup,[H.rent]:T.rentL,[H.sal]:T.salaryL,[H.spare]:T.spareL,[H.work]:T.workshopL,[H.misc]:T.miscL,[H.show]:T.expense,[H.mrec]:T.income};
-  const capL=id=>`${pName(id)} Capital A/c`;
+  const capL=id=>hLed(id);
   for(const o of DB.oldveh||[]) if(o.status==='sold'&&ins(o.soldDate)&&num(o.soldPrice)>0){
     const buyer=`${o.buyer||'Old vehicle buyer'}${o.buyerPhone?' ('+o.buyerPhone+')':''}`, pr=r2(num(o.soldPrice)-num(o.cost)); parties.add(buyer);
     V.push({type:'Sales',date:o.soldDate,id:'ov'+o.id,party:buyer,nar:`Old vehicle ${o.model} ${o.regNo||''} sold`,L:[[buyer,num(o.soldPrice)],[T.exchange,-num(o.cost)],...(Math.abs(pr)>0.004?[['Profit on Old Vehicles',-pr]]:[])]});
   }
   for(const d of DB.daybook) if(d.oldId&&!d.old&&ins(d.date)&&num(d.amount)>0){
-    const a=num(d.amount), o=(DB.oldveh||[]).find(x=>x.id===d.oldId)||{}, own=d.by?`${pName(d.by)} Capital A/c`:modeL(d.mode);
+    const a=num(d.amount), o=(DB.oldveh||[]).find(x=>x.id===d.oldId)||{}, own=d.by?hLed(d.by):modeL(d.mode);
     if(d.type==='out') V.push({type:d.by?'Journal':'Payment',date:d.date,id:'d'+d.id,nar:d.particulars,L:[[T.exchange,a],[own,-a]]});
     else {const buyer=`${o.buyer||'Old vehicle buyer'}${o.buyerPhone?' ('+o.buyerPhone+')':''}`; V.push({type:d.by?'Journal':'Receipt',date:d.date,id:'d'+d.id,nar:d.particulars,L:[[own,a],[buyer,-a]]})}
   }
@@ -2039,7 +2071,7 @@ function tallyExport(){
   const {V,parties,T}=tallyVouchers(tFrom,tTo); if(!V.length){alert('No entries in these dates.');return}
   const x=esc, amt=n=>(Math.round(n*100)/100).toFixed(2);
   const led=(n,p)=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><LEDGER NAME="${x(n)}"><NAME.LIST><NAME>${x(n)}</NAME></NAME.LIST><PARENT>${x(p)}</PARENT><ISBILLWISEON>No</ISBILLWISEON></LEDGER></TALLYMESSAGE>`;
-  const masters=[...parties.map(p=>led(p,T.debtors)),led(T.exchange,'Current Assets'),led(T.expense,'Indirect Expenses'),led(T.income,'Indirect Incomes'),led('Discount Allowed','Indirect Expenses'),led('Profit on Old Vehicles','Indirect Incomes'),...[T.rentL,T.salaryL,T.spareL,T.workshopL,T.miscL].map(n=>led(n,'Indirect Expenses')),led(T.spareSup,'Sundry Creditors'),...['Service / workshop income','Other income'].map(n=>led(n,'Indirect Incomes')),...DB.partners.map(p=>led(`${p.name} Capital A/c`,'Capital Account'))];
+  const masters=[...parties.map(p=>led(p,T.debtors)),led(T.exchange,'Current Assets'),led(T.expense,'Indirect Expenses'),led(T.income,'Indirect Incomes'),led('Discount Allowed','Indirect Expenses'),led('Profit on Old Vehicles','Indirect Incomes'),...[T.rentL,T.salaryL,T.spareL,T.workshopL,T.miscL].map(n=>led(n,'Indirect Expenses')),led(T.spareSup,'Sundry Creditors'),...['Service / workshop income','Other income'].map(n=>led(n,'Indirect Incomes')),...COLL().map(c=>led(`${c.name} A/c`,'Current Assets')),...DB.partners.map(p=>led(`${p.name} Capital A/c`,'Capital Account'))];
   const vch=V.map(v=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER REMOTEID="hsc-${x(v.id)}" VCHTYPE="${v.type}" ACTION="Create" OBJVIEW="Accounting Voucher View">
 <DATE>${v.date.replace(/-/g,'')}</DATE><EFFECTIVEDATE>${v.date.replace(/-/g,'')}</EFFECTIVEDATE><VOUCHERTYPENAME>${v.type}</VOUCHERTYPENAME>${v.no?`<VOUCHERNUMBER>${x(v.no)}</VOUCHERNUMBER>`:''}${v.ref?`<REFERENCE>${x(v.ref)}</REFERENCE>`:''}${v.party?`<PARTYLEDGERNAME>${x(v.party)}</PARTYLEDGERNAME>`:''}
 <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW><ISINVOICE>No</ISINVOICE><NARRATION>${x(v.nar)}</NARRATION>
@@ -2384,7 +2416,7 @@ function cloudCard(){
 // Admin side: a small read-only list of vehicles in stock, so staff can pick a vehicle by purchase challan
 function stockViewSync(){
   if(!FB||!cloudReady||STAFF) return;
-  const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine)])), pj=JSON.stringify(DB.partners.map(p=>[p.id,p.name]));
+  const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine)])), pj=JSON.stringify(holders().map(p=>[p.id,p.name,isStaffH(p.id)?'s':'p']));
   if(j+pj===LAST_SV) return; LAST_SV=j+pj;
   FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j,p:pj}).catch(()=>{LAST_SV=''});
 }
@@ -2427,7 +2459,7 @@ function finApply(){
     if(dp>0&&!p&&Math.round(others)!==Math.round(dp)){ p={id:pid,mode:'Cash'}; s.payments.push(p) }
     if(p&&dp>0){
       Object.assign(p,{date:e.date||s.date,amount:dp}); if(e.mode) p.mode=e.mode; if(e.ref!=null) p.ref=txt(e.ref);
-      if(e.rcvBy!==undefined){ if(e.rcvBy&&DB.partners.some(x=>x.id===e.rcvBy)) p.by=e.rcvBy; else delete p.by }
+      if(e.rcvBy!==undefined){ if(e.rcvBy&&holders().some(x=>x.id===e.rcvBy)) p.by=e.rcvBy; else delete p.by }
       let pe=DB.daybook.find(x=>x.payId===pid);
       if(!pe){ pe={id:'dpd_'+s.id,created:Date.now(),type:'in',saleId:s.id,payId:pid}; DB.daybook.push(pe) }
       Object.assign(pe,{date:p.date,amount:dp,mode:p.mode||'Cash',particulars:`Sale #${s.inv} – ${s.name} (${s.model})${p.ref?' · '+p.ref:''}`}); if(p.by) pe.by=p.by; else delete pe.by;
@@ -2555,7 +2587,7 @@ function stAvail(){const f=$('#sform'), me=f&&f.eid.value, used=new Set(FINQ.fil
 function staffCalc(){const f=$('#sform'); if(!f) return; const t=num(f.price.value)+num(f.extra.value);
   $('#sT').textContent=rs(t); $('#sD').textContent=rs(t-num(f.amount.value)-num(f.exValue.value)-num(f.down.value))}
 function staffDl(){const b=$('#sdlS'); if(!b) return; const A=stAvail(), t=$('#sstk');
-  const r=$('#srcv'); if(r){const v=r.value; r.innerHTML='<option value="">Business (cash / bank)</option>'+STOCKP.map(([id,n])=>`<option value="${esc(id)}">Partner – ${esc(n)}</option>`).join(''); r.value=v}
+  const r=$('#srcv'); if(r){const v=r.value; r.innerHTML='<option value="">Business (cash / bank)</option>'+STOCKP.map(([id,n,k])=>`<option value="${esc(id)}">${k==='s'?'Staff':'Partner'} – ${esc(n)}</option>`).join(''); r.value=v}
   if(t) t.innerHTML=STOCKV.length?`📦 ${A.length} vehicles in stock to choose from`:'<span style="color:var(--red)">⚠ Stock list not received yet — the owner must open the app once (new version) and the Firebase Rules must allow “stockview”.</span>';
   b.innerHTML=dl('sdlP',[...new Set(A.map(v=>v[0]).filter(Boolean))])+dl('sdlC',A.map(v=>v[3]).filter(Boolean))}
 function stFill(v){const f=$('#sform'); if(!v||!f) return; f.model.value=[v[1],v[2]].filter(Boolean).join(' '); f.chassis.value=v[3]||v[4]; if(!f.pchallan.value&&v[0]) f.pchallan.value=v[0];
