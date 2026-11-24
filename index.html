@@ -745,7 +745,8 @@ function dayExtra(type,head,x={}){
 }
 function dayForm(x={}){
   const type=x.type||'out', head=x.head||(type==='in'?HEADS_IN:HEADS_OUT)[0];
-  return `<label>Date<input type="date" name="date" value="${esc(x.date||today())}" required></label>
+  return `<label>Date (from)<input type="date" name="date" value="${esc(x.date||today())}" required></label>
+  <label>Till date <span class="muted">(if for a period)</span><input type="date" name="dateTo" value="${esc(x.dateTo||'')}"></label>
   <label>Type<select name="type" onchange="dxType(this.form)"><option value="out" ${type==='out'?'selected':''}>Payment (money out)</option><option value="in" ${type==='in'?'selected':''}>Receipt (money in)</option></select></label>
   <label>Head (account)<select name="head" onchange="dxRender(this.form)">${headOpts(type,head)}</select></label>
   <label>Amount ₹<input name="amount" inputmode="decimal" value="${x.amount?num(x.amount):''}" required></label>
@@ -758,7 +759,9 @@ const dxVals=f=>{const o={};f.querySelectorAll('.dx [name]').forEach(i=>o[i.name
 function dxType(f){f.head.innerHTML=headOpts(f.type.value);dxRender(f)}
 function dxRender(f){f.querySelector('.dx').innerHTML=dayExtra(f.type.value,f.head.value,dxVals(f))}
 function dayRec(d){
+  if(d.dateTo&&d.dateTo<d.date){alert('“Till date” cannot be before the date.');return null}
   const r={date:d.date,type:d.type,head:d.head,amount:num(d.amount),mode:d.mode,particulars:txt(d.particulars)};
+  if(d.dateTo&&d.dateTo!==d.date) r.dateTo=d.dateTo;
   if(isCapH(d.head)){ if(!d.pid){alert('Choose the partner.');return null} r.pid=d.pid } else if(d.by) r.by=d.by;
   ['ref','challans','payee','forMonth','ptype','vendor','bill'].forEach(k=>{if(txt(d[k])) r[k]=txt(d[k])});
   if(d.old) r.old=1;
@@ -811,7 +814,7 @@ function dayList(){
   ${(n=>n?`<div class="warn" style="cursor:pointer;margin-bottom:8px" onclick="dayTbd=!dayTbd;dayList()">❓ <b>${n} ${n>1?'entries':'entry'}</b> – who paid / received is “${TBD_L}”. <u>${dayTbd?'Show all entries':'Show only these'}</u></div>`:'')(DB.daybook.filter(x=>x.by===TBD).length)}
   ${dayH?`<p class="note" style="margin:0 0 8px">Showing only “${esc(dayH)}”. Opening / closing cash are for all heads.</p>`:''}
   ${rows.length?`<div class="tablewrap"><table class="nice"><thead><tr><th>Date</th><th>Head</th><th>Remarks</th><th>Mode</th><th>Paid / received by</th><th class="num">Receipt</th><th class="num">Payment</th><th></th></tr></thead><tbody>
-  ${rows.map(d=>`<tr><td>${fd(d.date)}</td><td>${headOf(d)?`<span class="pill ${d.type==='in'?'in':'lost'}">${esc(headOf(d))}</span>`:'<span class="muted">—</span>'}</td>
+  ${rows.map(d=>`<tr><td style="white-space:nowrap">${fd(d.date)}${d.dateTo?`<div class="sub2">to ${fd(d.dateTo)}</div>`:''}</td><td>${headOf(d)?`<span class="pill ${d.type==='in'?'in':'lost'}">${esc(headOf(d))}</span>`:'<span class="muted">—</span>'}</td>
   <td class="wrap" style="max-width:380px">${esc(d.particulars)}${d.old?' <span class="pill lost">Old entry · not in cash</span>':''}${dayDesc(d)?`<div class="sub2">${esc(dayDesc(d))}</div>`:''}</td><td>${esc(d.mode)}</td><td style="white-space:nowrap">${whoCell(d)}</td><td class="num">${d.type==='in'?rs(d.amount):''}</td><td class="num">${d.type==='out'?rs(d.amount):''}</td>
   <td style="white-space:nowrap">${d.oldId?`<button class="btn plain sm" onclick="go('old')">Old Vehicles</button>`:d.saleId?'<span class="muted" style="font-size:12px">from Sales</span>':`<button class="btn plain sm" onclick="editDay('${d.id}')">Edit</button> <button class="btn plain sm" onclick="delDay('${d.id}')">Delete</button>`}</td></tr>`).join('')}</tbody>
   <tfoot><tr class="tot"><td colspan="5">Total</td><td class="num">${rs(tin)}</td><td class="num">${rs(tout)}</td><td></td></tr></tfoot></table></div>`:'<div class="empty">No entries for these dates.</div>'}`;
