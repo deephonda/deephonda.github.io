@@ -43,6 +43,10 @@ input,select,textarea{font:inherit;color:var(--ink);padding:8px 10px;border:1px 
 input:focus,select:focus,textarea:focus{outline:2px solid var(--red);outline-offset:-1px;border-color:var(--red)}
 textarea{min-height:60px;resize:vertical}
 .span2{grid-column:span 2}
+.grid>label:not([style*="flex-direction:row"]){justify-content:flex-end}
+.grid input:not([type=checkbox]):not([type=radio]):not([type=file]),.grid select{height:40px;box-sizing:border-box;line-height:1.2}
+.grid select{-webkit-appearance:none;appearance:none;padding-right:30px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23666' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center}
+.grid input[type=date]{-webkit-appearance:none;appearance:none;display:block;min-width:0}
 @media (max-width:520px){.span2{grid-column:span 1}}
 .btn{border:1px solid var(--red);background:var(--red);color:#fff;padding:8px 14px;border-radius:7px;font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}
 .btn:hover{background:var(--red-dark)}
@@ -746,7 +750,7 @@ function dayExtra(type,head,x={}){
 function dayForm(x={}){
   const type=x.type||'out', head=x.head||(type==='in'?HEADS_IN:HEADS_OUT)[0];
   return `<label>Date (from)<input type="date" name="date" value="${esc(x.date||today())}" required></label>
-  <label>Till date <span class="muted">(if for a period)</span><input type="date" name="dateTo" value="${esc(x.dateTo||'')}"></label>
+  <label title="Only if this entry is for a period, e.g. 1–15 Nov">Till date (optional)<input type="date" name="dateTo" value="${esc(x.dateTo||'')}"></label>
   <label>Type<select name="type" onchange="dxType(this.form)"><option value="out" ${type==='out'?'selected':''}>Payment (money out)</option><option value="in" ${type==='in'?'selected':''}>Receipt (money in)</option></select></label>
   <label>Head (account)<select name="head" onchange="dxRender(this.form)">${headOpts(type,head)}</select></label>
   <label>Amount ₹<input name="amount" inputmode="decimal" value="${x.amount?num(x.amount):''}" required></label>
