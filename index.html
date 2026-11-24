@@ -166,7 +166,7 @@ const FB_CONFIG={apiKey:"AIzaSyBwEfdGtbhXbaiqVv34K1olQDwWSvD301E",authDomain:"ho
 const FBK=KEY+'_fbcfg';
 function fbCfg(){if(FB_CONFIG)return FB_CONFIG;try{return JSON.parse(localStorage.getItem(FBK))||null}catch(e){return null}}
 const CLOUD=!!fbCfg();
-let STAFF=false,FINQ=[],staffQ='';
+let STAFF=false,FINQ=[],staffQ='',STOCKV=[],LAST_SV='';
 let FB=null,cloudReady=false,READONLY=false,SYNCED={},UNSUB=[],appDirty=false,cloudEmail='',pendingN=0,SYNC_ST='';
 function save(){
   if(READONLY){ try{DB=JSON.parse(localStorage.getItem(KEY))||DB}catch(e){} toast('📴 No internet — this entry was not saved'); setTimeout(render,0); return }
@@ -2281,6 +2281,7 @@ function remoteChanged(){
 }
 function cloudPush(){
   if(!FB||!cloudReady) return;
+  stockViewSync();
   const {F,db}=FB, ops=[];
   for(const c of COLS){ const m=SYNCED[c]||(SYNCED[c]=new Map()), seen=new Set();
     for(const r of DB[c]){ if(!r.id) r.id=uid(); seen.add(r.id); const j=JSON.stringify(r); if(m.get(r.id)!==j){m.set(r.id,j);ops.push([c,r.id,j])} }
@@ -2321,6 +2322,10 @@ service cloud.firestore {
       allow read, write: if request.auth != null
         && request.auth.token.email.lower() in [${L(em)}];
     }
+    match /shops/${SHOP}/stockview/{id} {
+      allow read: if request.auth != null
+        && request.auth.token.email.lower() in [${L(sf)}];
+    }
     match /shops/${SHOP}/finentries/{id} {
       allow read, delete: if request.auth != null
         && request.auth.token.email.lower() in [${L(sf)}];
@@ -2359,6 +2364,13 @@ function cloudCard(){
   ${rulesBox(cloudEmail)}</div>`;
 }
 /* ---------- sale entries by staff (staff login) ---------- */
+// Admin side: a small read-only list of vehicles in stock, so staff can pick a vehicle by purchase challan
+function stockViewSync(){
+  if(!FB||!cloudReady||STAFF) return;
+  const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine)]));
+  if(j===LAST_SV) return; LAST_SV=j;
+  FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j}).catch(()=>{LAST_SV=''});
+}
 const chKey=v=>txt(v).toUpperCase().replace(/[^A-Z0-9]/g,'');
 const finRef=id=>FB.F.doc(FB.db,'shops',SHOP,'finentries',id);
 const STF=['challan','date','pchallan','name','phone','model','chassis','down','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue'];
@@ -2443,6 +2455,10 @@ function staffToSale(id){
 function staffStart(){
   cloudScreen('<div class="empty">⏳ Loading…</div>');
   const {F,db}=FB; let first=true;
+  UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'stockview','all'),snap=>{
+    try{STOCKV=snap.exists()?JSON.parse(snap.data().j)||[]:[]}catch(e){STOCKV=[]}
+    staffDl();
+  },()=>{}));
   UNSUB.push(F.onSnapshot(F.collection(db,'shops',SHOP,'finentries'),{includeMetadataChanges:true},snap=>{
     FINQ=snap.docs.map(d=>({id:d.id,...d.data(),_p:d.metadata.hasPendingWrites}));
     const ae=document.activeElement; if(!first&&ae&&ae.closest&&ae.closest('#sform,#fform')){staffList();return}
@@ -2480,9 +2496,10 @@ function staffView(){
       <label>Sale date<input type="date" name="date" required></label>
       <label>Customer name<input name="name" required></label>
       <label>Mobile<input name="phone" inputmode="tel"></label>
-      <label>Purchase Challan No<input name="pchallan" autocapitalize="characters"></label>
+      <label>Purchase Challan No<input name="pchallan" list="sdlP" autocapitalize="characters" oninput="staffPC()" onchange="staffPC()"></label>
       <label>Model<input name="model" list="sdlM"></label>
-      <label class="span2">Chassis No (if known)<input name="chassis" class="mono" autocapitalize="characters"></label>
+      <label class="span2">Chassis No<input name="chassis" list="sdlC" class="mono" autocapitalize="characters" oninput="staffCH()" onchange="staffCH()"></label>
+      <div id="spick" class="span2"></div>
       <label>Down payment ₹<input name="down" inputmode="decimal"></label>
       <label>Finance amount ₹ (0 if cash sale)<input name="amount" inputmode="decimal"></label>
       <label>Financer<input name="financer" list="sdlF" placeholder="Muthoot…"></label>
@@ -2493,10 +2510,29 @@ function staffView(){
       <p class="note span2" style="margin:0">When the finance money comes, enter it in the <b>Finance</b> tab.</p>
       <p id="shint" class="note span2" style="margin:0"></p>
       <div class="row span2"><button class="btn">Save</button><button type="button" class="btn plain" onclick="staffView()">Clear</button></div>
-    </form>${dls}</div>${listCard('My sale entries')}${foot}`;
-    $('#sform').date.value=today();
+    </form>${dls}<span id="sdlS"></span></div>${listCard('My sale entries')}${foot}`;
+    $('#sform').date.value=today(); staffDl();
   }
   staffList();
+}
+// vehicles in stock that no other staff entry has taken yet
+function stAvail(){const f=$('#sform'), me=f&&f.eid.value, used=new Set(FINQ.filter(e=>e.id!==me&&e.chassis).map(e=>up(e.chassis)));
+  return STOCKV.filter(v=>!(v[3]&&used.has(v[3])))}
+function staffDl(){const b=$('#sdlS'); if(!b) return; const A=stAvail();
+  b.innerHTML=dl('sdlP',[...new Set(A.map(v=>v[0]).filter(Boolean))])+dl('sdlC',A.map(v=>v[3]).filter(Boolean))}
+function stFill(v){const f=$('#sform'); if(!v||!f) return; f.model.value=[v[1],v[2]].filter(Boolean).join(' '); f.chassis.value=v[3]||v[4]; if(!f.pchallan.value&&v[0]) f.pchallan.value=v[0];
+  $('#spick').innerHTML=`<p class="note" style="margin:0;color:var(--green,#15803d)">✓ ${esc(f.model.value)} · Chassis ${esc(v[3])}${v[4]?' · Engine '+esc(v[4]):''}</p>`}
+function staffPC(){
+  const f=$('#sform'), k=chKey(f.pchallan.value), box=$('#spick'); if(!k){box.innerHTML='';return}
+  const vs=stAvail().filter(v=>chKey(v[0])===k);
+  if(vs.length===1){stFill(vs[0]);return}
+  if(vs.length>1){window.__vs=vs;
+    box.innerHTML=`<label>${vs.length} vehicles in stock on this purchase challan — choose one<select onchange="if(this.value!=='')stFill(__vs[+this.value])"><option value="">— choose vehicle —</option>${vs.map((v,i)=>`<option value="${i}">${esc(v[1])} ${esc(v[2])} · Chassis ${esc(v[3])}</option>`).join('')}</select></label>`;return}
+  box.innerHTML=STOCKV.length?'<p class="note" style="margin:0">No vehicle in stock with this purchase challan (or already entered). Type the chassis no. instead.</p>':'';
+}
+function staffCH(){
+  const f=$('#sform'), c=up(f.chassis.value); if(c.length<5) return;
+  const v=stAvail().find(x=>x[3]===c||x[4]===c); if(v){ f.pchallan.value=v[0]||f.pchallan.value; stFill(v) }
 }
 function staffRecd(sel){const f=$(sel); if(!f||!f.recd) return; const y=f.recd.value==='1'; f.querySelectorAll('.srec').forEach(l=>l.style.display=y?'':'none');
   if(y){ if(!f.recdAmt.value) f.recdAmt.value=f.amount.value; if(!f.recdDate.value) f.recdDate.value=today() } }
