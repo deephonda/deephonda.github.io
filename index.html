@@ -2499,7 +2499,7 @@ function staffView(){
       <label>Purchase Challan No<input name="pchallan" list="sdlP" autocapitalize="characters" oninput="staffPC()" onchange="staffPC()"></label>
       <label>Model<input name="model" list="sdlM"></label>
       <label class="span2">Chassis No<input name="chassis" list="sdlC" class="mono" autocapitalize="characters" oninput="staffCH()" onchange="staffCH()"></label>
-      <div id="spick" class="span2"></div>
+      <div id="spick" class="span2"></div><p id="sstk" class="note span2" style="margin:0"></p>
       <label>Down payment ₹<input name="down" inputmode="decimal"></label>
       <label>Finance amount ₹ (0 if cash sale)<input name="amount" inputmode="decimal"></label>
       <label>Financer<input name="financer" list="sdlF" placeholder="Muthoot…"></label>
@@ -2518,7 +2518,8 @@ function staffView(){
 // vehicles in stock that no other staff entry has taken yet
 function stAvail(){const f=$('#sform'), me=f&&f.eid.value, used=new Set(FINQ.filter(e=>e.id!==me&&e.chassis).map(e=>up(e.chassis)));
   return STOCKV.filter(v=>!(v[3]&&used.has(v[3])))}
-function staffDl(){const b=$('#sdlS'); if(!b) return; const A=stAvail();
+function staffDl(){const b=$('#sdlS'); if(!b) return; const A=stAvail(), t=$('#sstk');
+  if(t) t.innerHTML=STOCKV.length?`📦 ${A.length} vehicles in stock to choose from`:'<span style="color:var(--red)">⚠ Stock list not received yet — the owner must open the app once (new version) and the Firebase Rules must allow “stockview”.</span>';
   b.innerHTML=dl('sdlP',[...new Set(A.map(v=>v[0]).filter(Boolean))])+dl('sdlC',A.map(v=>v[3]).filter(Boolean))}
 function stFill(v){const f=$('#sform'); if(!v||!f) return; f.model.value=[v[1],v[2]].filter(Boolean).join(' '); f.chassis.value=v[3]||v[4]; if(!f.pchallan.value&&v[0]) f.pchallan.value=v[0];
   $('#spick').innerHTML=`<p class="note" style="margin:0;color:var(--green,#15803d)">✓ ${esc(f.model.value)} · Chassis ${esc(v[3])}${v[4]?' · Engine '+esc(v[4]):''}</p>`}
@@ -2532,7 +2533,8 @@ function staffPC(){
 }
 function staffCH(){
   const f=$('#sform'), c=up(f.chassis.value); if(c.length<5) return;
-  const v=stAvail().find(x=>x[3]===c||x[4]===c); if(v){ f.pchallan.value=v[0]||f.pchallan.value; stFill(v) }
+  const v=stAvail().find(x=>x[3]===c||x[4]===c); if(v){ f.pchallan.value=v[0]||f.pchallan.value; stFill(v); return }
+  if(STOCKV.length&&c.length>=10) $('#spick').innerHTML=STOCKV.some(x=>x[3]===c||x[4]===c)?'<p class="note" style="margin:0">This vehicle is already entered in another sale.</p>':'<p class="note" style="margin:0">This chassis no. is not in stock (already sold, or not added to stock yet).</p>';
 }
 function staffRecd(sel){const f=$(sel); if(!f||!f.recd) return; const y=f.recd.value==='1'; f.querySelectorAll('.srec').forEach(l=>l.style.display=y?'':'none');
   if(y){ if(!f.recdAmt.value) f.recdAmt.value=f.amount.value; if(!f.recdDate.value) f.recdDate.value=today() } }
