@@ -1764,8 +1764,8 @@ function pdfData(which){
   if(which==='enquiries'){
     const rows=enqRows();
     return {title:'Enquiry Register',sub:[enqF==='All'?'All enquiries':enqF,enqPeriod()].filter(Boolean).join(' · '),
-      head:['No.','Date','Name','Mobile','Model wanted','Old vehicle','Follow-up','Status','Notes'],
-      rows:rows.map(e=>[eNo(e),fd(e.date),e.name,e.phone,e.model,e.exchange,fd(e.followUp),e.status,e.notes]),foot:[['','Total: '+rows.length]]};
+      head:['No.','Date','Name','Mobile','Model wanted','Old vehicle','Next call','Status','Last time he said','Notes'],
+      rows:rows.map(e=>{const o=saidOf(e), c=(e.calls||[]).length; return [eNo(e),fd(e.date),e.name,e.phone,e.model,e.exchange,fd(e.followUp),e.status,o.k==='none'?'':(o.guess?'':saidL(o.k)+(o.note?' – '+o.note:''))+(c?` (${c} call${c>1?'s':''})`:''),e.notes]}),foot:[['','','Total: '+rows.length]]};
   }
   const PB=x=>x.by?pName(x.by)+(x.type==='in'?' (kept)':' (own pocket)'):'Business';
   if(which==='exp'){
