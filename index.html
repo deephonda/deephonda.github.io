@@ -182,9 +182,10 @@ const FB_CONFIG={apiKey:"AIzaSyBwEfdGtbhXbaiqVv34K1olQDwWSvD301E",authDomain:"ho
 const FBK=KEY+'_fbcfg';
 function fbCfg(){if(FB_CONFIG)return FB_CONFIG;try{return JSON.parse(localStorage.getItem(FBK))||null}catch(e){return null}}
 const CLOUD=!!fbCfg();
-let STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
+let FINERR=false, MYP=null, ENQOK=null, STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
 let FB=null,cloudReady=false,READONLY=false,SYNCED={},UNSUB=[],appDirty=false,cloudEmail='',pendingN=0,SYNC_ST='';
 function save(){
+  if(STAFF){ enqNos(); staffEnqPush(); return }
   if(READONLY){ try{DB=JSON.parse(localStorage.getItem(KEY))||DB}catch(e){} toast('📴 No internet — this entry was not saved'); setTimeout(render,0); return }
   enqNos();
   try{ localStorage.setItem(KEY,JSON.stringify(DB)); storageOK=true }catch(e){ storageOK=CLOUD; if(!CLOUD) toast('⚠ Could not save — take a backup!') }
@@ -215,6 +216,7 @@ let tab='dash'; try{tab=localStorage.getItem(KEY+'_tab')||'dash'}catch(e){}
 if(['dealer','rent','exp','partners'].includes(tab)){accT=tab;tab='acc'}
 function go(t){tab=t;try{localStorage.setItem(KEY+'_tab',t)}catch(e){};render()}
 function render(){
+  if(STAFF){ if(dlg.open) dlg.close(); staffView(); return }
   if(CLOUD&&!cloudReady&&!READONLY) return;
   if(DB.sales.some(x=>x.financeBy)||DB.daybook.some(d=>d.fin&&d.by)){DB.sales.forEach(x=>delete x.financeBy);DB.daybook.forEach(d=>{if(d.fin) delete d.by});save()}
   if(oldSync()) save();
@@ -1255,7 +1257,7 @@ function callDlg(id,pre){
       <div class="row" style="align-self:end;gap:6px">${[[1,'Tomorrow'],[3,'+3 days'],[7,'+1 week'],[30,'+1 month']].map(([n,l])=>`<button type="button" class="btn plain sm" onclick="$('#fcall').next.value=addDays(${n})">${l}</button>`).join('')}</div>
       <p id="callSt" class="note span2" style="margin:0"></p>
     </form>`,
-  `<button class="btn plain" onclick="dlg.close()">Cancel</button>${e.status==='Open'?`<button class="btn ghost" onclick="dlg.close();newSale(null,'${id}')">Convert to sale</button>`:''}<button class="btn" onclick="saveCall('${id}')">Save call</button>`);
+  `<button class="btn plain" onclick="dlg.close()">Cancel</button>${e.status==='Open'&&!STAFF?`<button class="btn ghost" onclick="dlg.close();newSale(null,'${id}')">Convert to sale</button>`:''}<button class="btn" onclick="saveCall('${id}')">Save call</button>`);
   const k=pre&&SAIDUI[pre]&&pre!=='none'?pre:'visit'; $('#fcall').said.value=k; callSaid(k);
   dlg.addEventListener('close',()=>{if(pre) render()},{once:true});
 }
@@ -1289,7 +1291,7 @@ function enqTable(rows){
   <td>${e.followUp?(e.status==='Open'&&e.followUp<=today()?`<span class="pill due">${fd(e.followUp)}</span>`:fd(e.followUp)):''}</td>
   <td><span class="pill ${e.status==='Open'?'open':e.status==='Sold'?'in':'lost'}">${esc(e.status)}</span></td>
   <td style="white-space:normal;min-width:180px">${saidChip(e)}${e.lastCall?`<div class="sub2">${fd(e.lastCall)} · ${(e.calls||[]).length} call${(e.calls||[]).length===1?'':'s'}</div>`:''}</td><td style="white-space:normal;min-width:120px">${esc(e.notes)}</td>
-  <td style="white-space:nowrap"><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call</button> ${e.status==='Open'?`<button class="btn ghost sm" onclick="newSale(null,'${e.id}')">Convert to sale</button> `:''}<button class="btn plain sm" onclick="editEnq('${e.id}')">Edit</button> <button class="btn plain sm" style="color:var(--red)" title="Delete this enquiry" onclick="delEnq('${e.id}')">🗑 Delete</button></td></tr>`).join('')}</table></div>`;
+  <td style="white-space:nowrap"><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call</button> ${e.status==='Open'&&!STAFF?`<button class="btn ghost sm" onclick="newSale(null,'${e.id}')">Convert to sale</button> `:''}<button class="btn plain sm" onclick="editEnq('${e.id}')">Edit</button>${STAFF?'':` <button class="btn plain sm" style="color:var(--red)" title="Delete this enquiry" onclick="delEnq('${e.id}')">🗑 Delete</button>`}</td></tr>`).join('')}</table></div>`;
 }
 function enqForm(e={}){
   return `<form id="fen" class="grid">
@@ -1354,9 +1356,9 @@ function saveEnqPhoto(){
 }
 function vEnq(){
   if(enqNos()) save();
-  $('#app').innerHTML=`${callsCard()}<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
+  $('#app').innerHTML=`${callsCard()}<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${STAFF?'':photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
   <div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">Enquiry register</h2>
-  <button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button><span id="enqDelBtn"></span></div>
+  ${STAFF?'':`<button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button>`}<span id="enqDelBtn"></span></div>
   <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
     <label style="margin:0">Status<select style="width:auto" onchange="enqF=this.value;vEnq()">${opts(['Open','Sold','Lost','All'],enqF)}</select></label>
     <label style="margin:0">Month<select style="width:auto" onchange="enqSetM(this.value)"><option value="">All months</option>${[...new Set([today().slice(0,7),...DB.enquiries.map(e=>(e.date||'').slice(0,7)).filter(Boolean)])].sort().reverse().map(m=>`<option value="${m}" ${m===enqM?'selected':''}>${mLabel(m)}</option>`).join('')}</select></label>
@@ -1370,7 +1372,7 @@ function vEnq(){
 function enqList(){
   const r=enqRows(), p=enqPeriod();
   $('#enqList').innerHTML=`<p class="note" style="margin:0 0 8px"><b>${r.length}</b> enquir${r.length===1?'y':'ies'}${p?' · '+esc(p):''}</p>`+(r.length?enqTable(r):'<div class="empty">No enquiries.</div>');
-  $('#enqDelBtn').innerHTML=r.length?`<button class="btn plain sm" style="color:var(--red);border-color:var(--red)" onclick="delEnqAll()">🗑 Delete all (${r.length})</button>`:'';
+  $('#enqDelBtn').innerHTML=r.length&&!STAFF?`<button class="btn plain sm" style="color:var(--red);border-color:var(--red)" onclick="delEnqAll()">🗑 Delete all (${r.length})</button>`:'';
 }
 function delEnq(id){
   const e=DB.enquiries.find(x=>x.id===id); if(!e) return;
@@ -1395,7 +1397,7 @@ function saveEnq(id){
 }
 function editEnq(id){
   openDlg('Edit enquiry',enqForm(DB.enquiries.find(x=>x.id===id)),
-  `<button class="btn plain" style="margin-right:auto;color:var(--red)" onclick="if(confirm('Delete enquiry?')){DB.enquiries=DB.enquiries.filter(x=>x.id!=='${id}');save();dlg.close();render()}">Delete</button><button class="btn" onclick="saveEnq('${id}')">Save</button>`);
+  `${STAFF?'':`<button class="btn plain" style="margin-right:auto;color:var(--red)" onclick="delEnq('${id}')">Delete</button>`}<button class="btn" onclick="saveEnq('${id}')">Save</button>`);
 }
 
 /* ---------- settings & backup ---------- */
@@ -1416,7 +1418,7 @@ function vSet(){
   <div class="row"><button class="btn" onclick="backupJSON()">⬇ Download full backup</button>
   <label class="btn ghost" style="flex-direction:row;color:var(--red);font-size:15px">⬆ Restore from backup<input type="file" accept=".json" class="hide" onchange="restoreJSON(this.files[0])"></label></div>
   <p class="note">Excel exports: <a href="#" onclick="csv('stock');return false">Stock</a> · <a href="#" onclick="csv('sales');return false">Sales</a> · <a href="#" onclick="csv('daybook');return false">Day Book</a> · <a href="#" onclick="csv('enquiries');return false">Enquiries</a></p></div>
-  ${cloudCard()}
+  ${accCard()}${cloudCard()}
   <div class="card"><h2>Entry from photos (AI) – challans, sale bills, expenses / receipts</h2>
   <p style="margin-top:0"><b>“📷 Sales from bill photos”</b> in Sales and <b>“📷 From bill / receipt photo”</b> in Day Book use the same key.</p>
   <p style="margin-top:0">In Stock, use <b>“📷 Fill from challan photo”</b> to add challan photos / PDFs — vehicles are filled automatically; check and Save.</p>
@@ -2604,6 +2606,7 @@ function cloudStart(){
     FINQ=snap.docs.map(d=>({id:d.id,...d.data()}));
     if(cloudReady){ if(finApply()) save(); if(AUTO_N){ toast(`🧾 ${AUTO_N} sale${AUTO_N>1?'s':''} from staff added to Sales`); AUTO_N=0 } remoteChanged() }
   },()=>{}));
+  accListen();
   UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'meta','settings'),{includeMetadataChanges:true},snap=>{
     if(!cloudReady){ if(started) return; if(snap.metadata.fromCache&&!snap.exists()) return; init._s=snap.exists()?snap.data().j:null; begin(); return }
     if(snap.exists()) remoteSettings(snap.data().j);
@@ -2685,33 +2688,41 @@ async function cloudLogout(force){
   location.reload();
 }
 const emList=s=>[...new Set(String(s||'').split(/[,\s;]+/).map(x=>x.trim().toLowerCase()).filter(x=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))];
-function rulesText(s,st){
-  const em=emList(s), sf=emList(st).filter(x=>!em.includes(x)), L=a=>a.map(e=>`'${e}'`).join(', ');
+function rulesText(s){
+  const em=emList(s), L=a=>a.map(e=>`'${e}'`).join(', '), A=`/databases/$(database)/documents/shops/${SHOP}/meta/access`;
   return `rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Owners (fixed) + people given "Full access" inside the app
+    function em() { return request.auth.token.email.lower(); }
+    function acc() { return get(${A}).data; }
+    function can(p) { return request.auth != null && em() in acc().get(p, []); }
+    function owner() { return request.auth != null && (em() in [${L(em)}] || can('full')); }
+    function staffSale() { return can('fin') || can('sale'); }
+
     match /shops/${SHOP}/{document=**} {
-      allow read, write: if request.auth != null
-        && request.auth.token.email.lower() in [${L(em)}];
+      allow read, write: if owner();
+    }
+    // Employees read their own powers (set in the app: Settings → Employees & access)
+    match /shops/${SHOP}/meta/access {
+      allow read: if request.auth != null && em() in resource.data.get('all', []);
     }
     match /shops/${SHOP}/stockview/{id} {
-      allow read: if request.auth != null
-        && request.auth.token.email.lower() in [${L(sf)}];
+      allow read: if staffSale();
+    }
+    match /shops/${SHOP}/enquiries/{id} {
+      allow read: if can('enq');
+      allow create, update: if can('enq')
+        && request.resource.data.keys().hasOnly(['j','by','at'])
+        && request.resource.data.j.size() < 20000;
     }
     match /shops/${SHOP}/finentries/{id} {
-      allow read: if request.auth != null
-        && request.auth.token.email.lower() in [${L(sf)}];
-      allow create: if request.auth != null
-        && request.auth.token.email.lower() in [${L(sf)}]
-        && request.resource.data.size() < 60;
-      allow update: if request.auth != null
-        && request.auth.token.email.lower() in [${L(sf)}]
-        && request.resource.data.size() < 60
+      allow read: if staffSale();
+      allow create: if staffSale() && request.resource.data.size() < 60;
+      allow update: if staffSale() && request.resource.data.size() < 60
         && (resource.data.get('name', '') == ''
             || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amount','financer','recd','recdAmt','recdDate','by','at']));
-      allow delete: if request.auth != null
-        && request.auth.token.email.lower() in [${L(sf)}]
-        && resource.data.get('name', '') == '';
+      allow delete: if staffSale() && resource.data.get('name', '') == '';
     }
   }
 }`}
@@ -2721,14 +2732,109 @@ function saveFbCfg(){const c=parseFbCfg($('#fbIn').value);
   if(!c){alert('Config is incomplete. Copy the whole “firebaseConfig = { … }” block from Firebase.');return}
   if(!confirm('Turn on cloud? You will need to log in after this.'))return;
   try{localStorage.setItem(FBK,JSON.stringify(c))}catch(e){} location.reload()}
-function rulesBox(v){const a=DB.settings.ruleAdmins||v, st=DB.settings.ruleStaff||'';
-  const upd=`$('#rulesOut').value=rulesText($('#rulesEm').value,$('#rulesSt').value)`, keep=`DB.settings.ruleAdmins=$('#rulesEm').value.trim();DB.settings.ruleStaff=$('#rulesSt').value.trim();save()`;
-  return `<details style="margin-top:10px"><summary>Firebase Rules – which emails have access</summary>
-  <p class="note">1) Create each login in Firebase → Authentication → Users → Add user. 2) Enter the emails below. <b>Put every owner’s email in the first box</b> — anyone left out loses access. 3) Paste the full text into Firebase → Firestore → Rules and Publish.</p>
-  <label>Full access (owners / partners)<input id="rulesEm" value="${esc(a)}" placeholder="aap@gmail.com, partner@gmail.com" oninput="${upd}" onchange="${keep}"></label>
-  <label style="margin-top:6px">Staff – sale entry only (sale & purchase challan, customer, down payment, finance, old vehicle). Cannot see anything else<input id="rulesSt" value="${esc(st)}" placeholder="employee@gmail.com" oninput="${upd}" onchange="${keep}"></label>
-  <textarea id="rulesOut" readonly style="min-height:260px;font-family:ui-monospace,Menlo,monospace;font-size:12px;margin-top:6px">${esc(rulesText(a,st))}</textarea>
+function rulesBox(v){const a=DB.settings.ruleAdmins||v;
+  const upd=`$('#rulesOut').value=rulesText($('#rulesEm').value)`, keep=`DB.settings.ruleAdmins=$('#rulesEm').value.trim();save()`;
+  return `<details style="margin-top:10px"><summary>Firebase Rules (paste once in Firebase)</summary>
+  <p class="note">Needed only once (and again only if the <b>owner</b> emails change). Employees are added / removed in <b>Employees &amp; access</b> above – no Firebase change needed for them.<br>Copy the text → Firebase → Firestore Database → Rules → delete the old text → paste → <b>Publish</b>.</p>
+  <label>Owners – always full access (fixed)<input id="rulesEm" value="${esc(a)}" placeholder="aap@gmail.com, partner@gmail.com" oninput="${upd}" onchange="${keep}"></label>
+  <textarea id="rulesOut" readonly style="min-height:260px;font-family:ui-monospace,Menlo,monospace;font-size:12px;margin-top:6px">${esc(rulesText(a))}</textarea>
   <button class="btn plain sm" style="margin-top:6px" onclick="navigator.clipboard&&navigator.clipboard.writeText($('#rulesOut').value).then(()=>toast('Rules copied'))">Copy rules</button></details>`}
+// ===== Employees & access (managed inside the app) =====
+const PERMS=[['fin','Finance','Enter finance amount / received'],['sale','New Sale','Enter new sales'],['enq','Enquiries','Add enquiries, record calls'],['full','Full access','Everything – like an owner']];
+let ACC=null, ACC_ERR='';
+const accUsers=()=>{try{return ACC&&ACC.j?JSON.parse(ACC.j)||[]:[]}catch(e){return []}};
+function accWrite(U,msg){
+  U=U.map(u=>({...u,email:String(u.email||'').trim().toLowerCase()})).filter(u=>u.email);
+  const d={j:JSON.stringify(U),all:U.map(u=>u.email),at:FB.F.serverTimestamp(),by:cloudEmail};
+  PERMS.forEach(([k])=>d[k]=U.filter(u=>u[k]).map(u=>u.email));
+  ACC={...d}; collSync(U);
+  return FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'meta','access'),d).then(()=>{if(msg)toast(msg)}).catch(e=>alert('⚠ Not saved: '+((e&&e.code)||e)));
+}
+// employees ticked as "Money holder" appear in Day Book / sale "received by"
+function collSync(U){
+  const C=COLL(); let ch=false;
+  U.forEach(u=>{ const c=C.find(x=>x.email===u.email)||C.find(x=>!x.email&&x.name.toLowerCase()===String(u.name||'').toLowerCase());
+    if(u.money&&!c){C.push({id:'c_'+u.email.split('@')[0].replace(/\W/g,''),name:u.name||u.email,email:u.email});ch=true}
+    else if(c&&!c.email){c.email=u.email;ch=true} });
+  if(ch) save();
+}
+function accSeed(){ // first time: give the old staff list (Gurvinder) all employee powers
+  const em=emList(DB.settings.ruleStaff||'singhgurvinder3232@gmail.com');
+  const cOf=e=>COLL().find(c=>e.split('@')[0].includes(c.name.split(' ')[0].toLowerCase()));
+  return em.map(e=>({email:e,name:(cOf(e)||{}).name||e.split('@')[0],fin:true,sale:true,enq:true,money:!!cOf(e)}));
+}
+function accListen(){
+  const {F,db}=FB; let first=true;
+  UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'meta','access'),snap=>{
+    ACC=snap.exists()?snap.data():null; ACC_ERR='';
+    if(first&&!snap.exists()&&!snap.metadata.fromCache) accWrite(accSeed());
+    first=false; if($('#accBox')) $('#accBox').innerHTML=accTable();
+  },e=>{ACC_ERR=(e&&e.code)||'error'}));
+}
+function accTable(){
+  const U=accUsers();
+  return `${U.length?`<div class="tablewrap"><table><tr><th>Name</th><th>Login email</th>${PERMS.map(([,l,t])=>`<th title="${t}">${l}</th>`).join('')}<th title="Can hold money (shows in Day Book “received / paid by”)">Money holder</th><th></th></tr>
+  ${U.map((u,i)=>`<tr><td><b>${esc(u.name)}</b></td><td class="mono" style="font-size:.85em">${esc(u.email)}</td>
+    ${PERMS.map(([k])=>`<td style="text-align:center"><input type="checkbox" style="width:20px;height:20px" ${u[k]?'checked':''} onchange="accSet(${i},'${k}',this.checked)"></td>`).join('')}
+    <td style="text-align:center"><input type="checkbox" style="width:20px;height:20px" ${u.money?'checked':''} onchange="accSet(${i},'money',this.checked)"></td>
+    <td style="white-space:nowrap"><button class="btn plain sm" onclick="accReset(${i})" title="Send a password-reset email">🔑 Password</button> <button class="btn plain sm" style="color:var(--red)" onclick="accDel(${i})">🗑 Remove</button></td></tr>`).join('')}</table></div>`:'<p class="note">No employees yet.</p>'}
+  ${ACC_ERR?`<p class="warn">⚠ Could not read the employee list (${esc(ACC_ERR)}).</p>`:''}`;
+}
+function accSet(i,k,v){
+  const U=accUsers(), u=U[i]; if(!u) return;
+  if(k==='full'&&v&&!confirm(`Give FULL ACCESS to ${u.name}?\n\nHe will see and change EVERYTHING – sales, purchase prices, day book, accounts, settings – like an owner.`)){$('#accBox').innerHTML=accTable();return}
+  u[k]=v; if(!PERMS.some(([p])=>u[p])&&!confirm(`${u.name} will have no power at all (cannot open anything). OK?`)){$('#accBox').innerHTML=accTable();return}
+  accWrite(U,`✓ ${u.name}: ${(PERMS.find(p=>p[0]===k)||[,k==='money'?'Money holder':k])[1]} ${v?'ON':'OFF'}`);
+}
+function accDel(i){
+  const U=accUsers(), u=U[i]; if(!u) return; const code=String(10+Math.floor(Math.random()*90));
+  const t=prompt(`Remove ${u.name} (${u.email})?\nHe will not be able to open the app any more.\n\nTo confirm, type this number:  ${code}`);
+  if(t===null) return; if(t.replace(/\D/g,'')!==code){alert('Not removed – the number did not match.');return}
+  U.splice(i,1); accWrite(U,`${u.name} removed – no more access`);
+}
+function accReset(i){const u=accUsers()[i]; if(!u||!confirm(`Send a password-reset email to ${u.email}?\n\nHe opens the email on his phone and sets a new password.`)) return;
+  FB.U.sendPasswordResetEmail(FB.auth,u.email).then(()=>toast('✓ Reset email sent to '+u.email)).catch(e=>alert('Could not send: '+((e&&e.code)||e)))}
+async function accAdd(){
+  const f=$('#faccN'); if(!f.reportValidity()) return; const d=formData(f), email=String(d.email).trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){alert('Enter a correct email');return}
+  const U=accUsers(); if(U.some(u=>u.email===email)){alert('This email is already in the list – change the ticks in the table.');return}
+  if(emList(DB.settings.ruleAdmins||'').includes(email)){alert('This is an owner email – it already has full access.');return}
+  const u={email,name:txt(d.name),money:!!f.money.checked}; PERMS.forEach(([k])=>u[k]=!!f[k].checked);
+  if(!PERMS.some(([k])=>u[k])){alert('Tick at least one power (Finance / New Sale / Enquiries / Full access).');return}
+  if(u.full&&!confirm(`Give FULL ACCESS to ${u.name}? He will see and change everything, like an owner.`)) return;
+  let note='';
+  if(d.pw){
+    if(String(d.pw).length<6){alert('Password must be at least 6 characters.');return}
+    toast('⏳ Creating login…');
+    try{ const A2=FB.A.initializeApp(fbCfg(),'add'+Date.now()), au=FB.U.getAuth(A2);
+      await FB.U.createUserWithEmailAndPassword(au,email,d.pw); try{await FB.U.signOut(au)}catch(e){} try{await FB.A.deleteApp(A2)}catch(e){}
+      note=`Login created.\nEmail: ${email}\nPassword: ${d.pw}`;
+    }catch(e){ const c=(e&&e.code)||String(e);
+      if(/email-already-in-use/.test(c)) note='This email already had a login – its old password stays. (Use 🔑 Password to send him a reset email.)';
+      else if(/operation-not-allowed|admin-restricted/.test(c)){alert('Firebase does not allow creating logins from the app.\nFirebase → Authentication → Sign-in method → Email/Password must be ON (and “Enable create (sign-up)” allowed).\n\nOr create the login in Firebase → Authentication → Users → Add user, then add him here WITHOUT a password.');return}
+      else if(/weak-password/.test(c)){alert('Password is too weak – use at least 6 characters.');return}
+      else {alert('Could not create the login: '+c);return} }
+  } else note='No password given – make sure this email already has a login (Firebase → Authentication → Users).';
+  await accWrite([...U,u],`✓ ${u.name} added`);
+  alert(`✓ ${u.name} added\n\n${note}\n\nApp link: ${location.origin+location.pathname}\nPowers: ${PERMS.filter(([k])=>u[k]).map(p=>p[1]).join(', ')}`);
+  render();
+}
+function accCard(){
+  if(!CLOUD||!cloudReady) return '';
+  return `<div class="card"><h2>👥 Employees &amp; access</h2>
+  <p class="note" style="margin-top:0">Tick what each person may do. Changes work at once on his phone – no Firebase change needed.<br>
+  <b>Finance</b> – finance amount / received · <b>New Sale</b> – enter sales · <b>Enquiries</b> – add enquiries, record calls · <b>Full access</b> – everything, like an owner · <b>Money holder</b> – shows in Day Book “received / paid by”.</p>
+  <div id="accBox">${accTable()}</div>
+  <h3 style="margin:16px 0 6px">+ Add employee</h3>
+  <form id="faccN" class="grid" onsubmit="event.preventDefault();accAdd()">
+    <label>Name<input name="name" required placeholder="e.g. Sukhwinder Singh"></label>
+    <label>Gmail / email (his login)<input name="email" type="email" required autocapitalize="off" placeholder="name@gmail.com"></label>
+    <label>Password for him <span class="muted">(min 6 – creates his login)</span><input name="pw" autocomplete="new-password" placeholder="leave empty if login already made"></label>
+    <div class="span2 row" style="gap:14px;flex-wrap:wrap">${PERMS.map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" name="${k}" style="width:20px;height:20px" ${k==='enq'?'checked':''}> ${l}</label>`).join('')}
+      <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" name="money" style="width:20px;height:20px"> Money holder</label></div>
+    <div class="span2"><button class="btn">Add employee</button></div>
+  </form></div>`;
+}
 function cloudCard(){
   if(!CLOUD) return `<div class="card"><h2>☁ Cloud sync – same data on laptop, iPad and phone</h2>
   <p style="margin-top:0">After creating a Firebase project, paste its config (firebaseConfig) here.</p>
@@ -2877,6 +2983,12 @@ function staffToSale(id){
   if(!st) f.stockId.insertAdjacentHTML('afterend',`<div class="sub2" style="color:var(--amber)">Choose the vehicle — ${esc([e.model,e.chassis,e.pchallan&&'purch. challan '+e.pchallan].filter(Boolean).join(' · '))||'staff gave no vehicle details'}</div>`);
   saleCalc();
 }
+// Staff: send new / changed enquiries to the cloud (staff can never delete)
+function staffEnqPush(){
+  const {F,db}=FB, m=SYNCED.enquiries||(SYNCED.enquiries=new Map()), ops=[];
+  for(const r of DB.enquiries){ if(!r.id) r.id=uid(); if(!r.by&&!m.has(r.id)) r.by=cloudEmail; const j=JSON.stringify(r); if(m.get(r.id)!==j){ m.set(r.id,j); ops.push(F.setDoc(F.doc(db,'shops',SHOP,'enquiries',r.id),{j,by:cloudEmail,at:F.serverTimestamp()})) } }
+  if(ops.length) stWrite(Promise.all(ops),'✓ Saved – the office can see it');
+}
 // Staff side
 function staffStart(){
   if(window.__slowT) clearTimeout(window.__slowT);
@@ -2890,21 +3002,42 @@ function staffStart(){
     if(staffTab==='fin'&&$('#fpend')) staffFinPend();
     staffDl();
   },()=>{}));
+  UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'meta','access'),snap=>{
+    const d=snap.exists()?snap.data():null, me=String(cloudEmail).toLowerCase();
+    MYP=d?{fin:(d.fin||[]).includes(me),sale:(d.sale||[]).includes(me),enq:(d.enq||[]).includes(me),full:(d.full||[]).includes(me)}:null;
+    if(MYP&&MYP.full){ let n=0; try{n=+sessionStorage.getItem('fullR')||0; sessionStorage.setItem('fullR',n+1)}catch(e){} if(n<2){ location.reload(); return } }
+    if(!first) staffView();
+  },()=>{MYP=null}));
+  UNSUB.push(F.onSnapshot(F.collection(db,'shops',SHOP,'enquiries'),snap=>{
+    const m=SYNCED.enquiries=new Map(); DB.enquiries=snap.docs.map(d=>{const j=d.data().j, r=jparse(j); if(r){r.id=r.id||d.id; m.set(r.id,j)} return r}).filter(Boolean); ENQOK=true;
+    if(first&&FINERR){ first=false; staffView(); return }
+    if(staffTab==='enq'&&!first){ const ae=document.activeElement; if(dlg.open||(ae&&ae.closest&&ae.closest('#fen,#enqList,.row'))&&/INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return; staffView() }
+  },()=>{ENQOK=false; if(!first||FINERR) staffView()}));
   UNSUB.push(F.onSnapshot(F.collection(db,'shops',SHOP,'finentries'),{includeMetadataChanges:true},snap=>{
     FINQ=snap.docs.map(d=>({id:d.id,...d.data(),_p:d.metadata.hasPendingWrites}));
     const ae=document.activeElement; if(!first&&ae&&ae.closest&&ae.closest('#sform,#fform')){staffList();return}
     first=false; staffView();
-  },e=>{ STAFF=false; UNSUB.forEach(u=>{try{u()}catch(x){}}); UNSUB=[];
-    cloudScreen(`<h2>Access denied</h2><p style="margin-top:0"><b>${esc(cloudEmail)}</b> does not have access to this showroom’s data. Ask the owner to add this email in Settings → Firebase Rules.</p><button class="btn" onclick="cloudLogout(true)">Logout</button>`) }));
+  },e=>{ FINERR=true; FINQ=[]; if(first){first=false; setTimeout(staffView,1500)} else staffView() }));
 }
+function staffDenied(){ STAFF=false; UNSUB.forEach(u=>{try{u()}catch(x){}}); UNSUB=[];
+    cloudScreen(`<h2>Access denied</h2><p style="margin-top:0"><b>${esc(cloudEmail)}</b> does not have access to this showroom’s data. Ask the owner to add this email in Settings → Employees &amp; access.</p><button class="btn" onclick="cloudLogout(true)">Logout</button>`) }
 let staffTab='fin'; try{staffTab=localStorage.getItem(KEY+'_stab')||'fin'}catch(e){}
 function staffGo(t){staffTab=t;try{localStorage.setItem(KEY+'_stab',t)}catch(e){};staffView()}
 function staffView(){
   setSync(); document.querySelectorAll('button[onclick="backupJSON()"]').forEach(b=>b.style.display='none');
-  $('#nav').innerHTML=[['fin','Finance'],['sale','New Sale']].map(([k,v])=>`<button class="${k===staffTab?'on':''}" onclick="staffGo('${k}')">${v}</button>`).join('');
+  const tabs=[['fin','Finance'],['sale','New Sale'],['enq','Enquiries']].filter(([k])=>MYP?MYP[k]:(k==='enq'?ENQOK!==false:!FINERR));
+  if(!MYP&&FINERR&&ENQOK===false){ staffDenied(); return }
+  if(!tabs.length){ $('#nav').innerHTML=''; $('#app').innerHTML=`<div class="card" style="max-width:560px;margin:30px auto"><h2 style="margin-top:0">No access</h2><p><b>${esc(cloudEmail)}</b> has no work given in this app right now. Ask the owner.</p><button class="btn" onclick="cloudLogout(true)">Logout</button></div>`; return }
+  if(!tabs.some(([k])=>k===staffTab)) staffTab=tabs[0][0];
+  $('#nav').innerHTML=tabs.map(([k,v])=>`<button class="${k===staffTab?'on':''}" onclick="staffGo('${k}')">${v}</button>`).join('');
   const foot=`<p class="note" style="text-align:center">${esc(cloudEmail)} · <a href="#" onclick="cloudLogout();return false">Logout</a></p>`;
   const listCard=t=>`<div class="card" style="max-width:760px;margin:16px auto"><div class="row"><h2 class="grow" style="margin:0">${t}</h2><input placeholder="Search challan / name" style="max-width:200px" value="${esc(staffQ)}" oninput="staffQ=this.value;staffList()"></div><div id="slist"></div></div>`;
   const dls=`${dl('sdlM',[...new Set(FINQ.map(e=>e.model).filter(Boolean))])}${dl('sdlF',[...new Set(['Muthoot',...FINQ.map(e=>e.financer).filter(Boolean)])])}`;
+  if(staffTab==='enq'){
+    if(ENQOK===false){ $('#app').innerHTML=`<div class="card" style="max-width:760px;margin:16px auto"><h2 style="margin-top:0">Enquiries</h2><p style="color:var(--red)">⚠ Enquiries are not open for <b>${esc(cloudEmail)}</b> yet. Ask the owner to publish the new Firebase Rules (Settings → Firebase Rules).</p></div>${foot}`; return }
+    if(ENQOK===null){ $('#app').innerHTML=`<div class="empty">⏳ Loading enquiries…</div>${foot}`; return }
+    vEnq(); $('#app').insertAdjacentHTML('beforeend',foot); return;
+  }
   if(staffTab==='fin'){
     $('#app').innerHTML=`<div class="card" style="max-width:760px;margin:16px auto">
     <h2 style="margin-top:0">Finance entry</h2>
