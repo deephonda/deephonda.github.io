@@ -1252,7 +1252,7 @@ function enqTable(rows){
   <td>${e.followUp?(e.status==='Open'&&e.followUp<=today()?`<span class="pill due">${fd(e.followUp)}</span>`:fd(e.followUp)):''}</td>
   <td><span class="pill ${e.status==='Open'?'open':e.status==='Sold'?'in':'lost'}">${esc(e.status)}</span></td>
   <td style="white-space:normal;min-width:160px">${esc(e.lastSaid||'')}${e.lastCall?`<div class="sub2">${fd(e.lastCall)} · ${(e.calls||[]).length} call${(e.calls||[]).length===1?'':'s'}</div>`:''}</td><td style="white-space:normal;min-width:120px">${esc(e.notes)}</td>
-  <td style="white-space:nowrap"><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call</button> ${e.status==='Open'?`<button class="btn ghost sm" onclick="newSale(null,'${e.id}')">Convert to sale</button> `:''}<button class="btn plain sm" onclick="editEnq('${e.id}')">Edit</button></td></tr>`).join('')}</table></div>`;
+  <td style="white-space:nowrap"><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call</button> ${e.status==='Open'?`<button class="btn ghost sm" onclick="newSale(null,'${e.id}')">Convert to sale</button> `:''}<button class="btn plain sm" onclick="editEnq('${e.id}')">Edit</button> <button class="btn plain sm" style="color:var(--red)" title="Delete this enquiry" onclick="delEnq('${e.id}')">🗑 Delete</button></td></tr>`).join('')}</table></div>`;
 }
 function enqForm(e={}){
   return `<form id="fen" class="grid">
@@ -1318,8 +1318,21 @@ function saveEnqPhoto(){
 function vEnq(){
   $('#app').innerHTML=`${callsCard()}<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
   <div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Enquiry register</h2>
-  <select style="width:auto" onchange="enqF=this.value;vEnq()">${opts(['Open','Sold','Lost','All'],enqF)}</select><button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button></div>
+  <select style="width:auto" onchange="enqF=this.value;vEnq()">${opts(['Open','Sold','Lost','All'],enqF)}</select><button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button>${(n=>n?`<button class="btn plain sm" style="color:var(--red);border-color:var(--red)" onclick="delEnqAll()">🗑 Delete all (${n})</button>`:'')(DB.enquiries.filter(e=>enqF==='All'||e.status===enqF).length)}</div>
   ${(r=>r.length?enqTable(r):'<div class="empty">No enquiries.</div>')(DB.enquiries.filter(e=>enqF==='All'||e.status===enqF).sort((a,b)=>(b.date||'').localeCompare(a.date||'')))}</div>`;
+}
+function delEnq(id){
+  const e=DB.enquiries.find(x=>x.id===id); if(!e) return;
+  if(!confirm(`Delete this enquiry?\n\n${e.name||''}  ${e.phone||''}\n${e.model||''}  (${fd(e.date)})\n\nThis cannot be undone.`)) return;
+  DB.enquiries=DB.enquiries.filter(x=>x.id!==id); save(); render(); toast('Enquiry deleted');
+}
+function delEnqAll(){
+  const L=DB.enquiries.filter(e=>enqF==='All'||e.status===enqF); if(!L.length) return;
+  const what=enqF==='All'?'ALL':`all ${enqF.toUpperCase()}`;
+  if(!confirm(`⚠ Delete ${what} enquiries?\n\n${L.length} enquir${L.length===1?'y':'ies'} will be deleted permanently, with their call history.\nThis cannot be undone.`)) return;
+  const t=prompt(`To confirm, type DELETE below.\n(${L.length} enquiries will be deleted)`);
+  if(t===null) return; if(t.trim().toUpperCase()!=='DELETE'){alert('Not deleted – you did not type DELETE.');return}
+  const ids=new Set(L.map(e=>e.id)); DB.enquiries=DB.enquiries.filter(e=>!ids.has(e.id)); save(); render(); toast(`${L.length} enquiries deleted`);
 }
 function saveEnq(id){
   const f=$('#fen'); if(!f.reportValidity()) return; const d=formData(f);
