@@ -1242,6 +1242,11 @@ function oldSync(){
     for(const o of L.slice(1)){ for(const k of ['regNo','chassis','engine','year','colour','note','repair']) if(!txt(keep[k])&&txt(o[k])) keep[k]=o[k];
       DB.daybook.forEach(d=>{if(d.oldId===o.id) d.oldId=keep.id}); DB.oldveh=DB.oldveh.filter(x=>x!==o); ch=true }
   }
+  // registration number typed inside the model, e.g. "Splendor (HR71M6059)" → number HR71M6059, model Splendor
+  const RG=/\(?\b([A-Z]{2})[\s-]?(\d{1,2})[\s-]?([A-Z]{0,3})[\s-]?(\d{3,4})\b\)?/i;
+  const pull=x=>{const m=String(x||'').match(RG); return m?{reg:(m[1]+m[2]+m[3]+m[4]).toUpperCase(),rest:String(x).replace(m[0],'').replace(/\(\s*\)/g,'').replace(/\s{2,}/g,' ').replace(/[\s,·-]+$/,'').trim()}:null};
+  for(const s of DB.sales) if(!txt(s.exchangeReg)&&s.exchange){const g=pull(s.exchange); if(g){s.exchangeReg=g.reg; s.exchange=g.rest||s.exchange; ch=true}}
+  for(const o of DB.oldveh) if(!txt(o.regNo)&&o.model){const g=pull(o.model); if(g){o.regNo=g.reg; o.model=g.rest||o.model; ch=true}}
   for(const s of DB.sales){ if(!(num(s.exchangeValue)>0)) continue;
     let o=DB.oldveh.find(x=>x.srcSaleId===s.id);
     if(!o){ o={id:'ov_'+s.id,created:Date.now(),srcSaleId:s.id,status:'in',model:s.exchange||'',regNo:''}; DB.oldveh.push(o); ch=true }
