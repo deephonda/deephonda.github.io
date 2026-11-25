@@ -2464,7 +2464,7 @@ service cloud.firestore {
         && request.auth.token.email.lower() in [${L(sf)}];
       allow create, update: if request.auth != null
         && request.auth.token.email.lower() in [${L(sf)}]
-        && request.resource.data.keys().hasOnly(['challan','date','pchallan','name','rel','relName','phone','address','price','extra','model','colour','chassis','engine','key','down','mode','ref','rcvBy','notes','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue','by','at','m']);
+        && request.resource.data.size() < 60;
     }
   }
 }`}
@@ -2741,8 +2741,7 @@ function staffFinSave(ev){
   const rec={amount:o&&num(o[4])>0?num(o[4]):amt,recd,recdAmt:recd?ra:0,recdDate:recd?d.recdDate:'',by:cloudEmail,at:FB.F.serverTimestamp()};
   if(!ex) rec.challan=txt(d.challan).toUpperCase();
   if(o&&num(o[4])>0) rec.financer=txt(o[5]); else if(d.financer) rec.financer=txt(d.financer);
-  FB.F.setDoc(finRef(id),rec,{merge:true}).catch(e=>toast('⚠ Not saved: '+(e.code||e.message)));
-  toast(navigator.onLine?'Saved ✓':'Saved – will sync when online'); staffView();
+  stWrite(FB.F.setDoc(finRef(id),rec,{merge:true}),'Saved ✓ – sent to office'); staffView();
 }
 function staffHint(){const f=$('#sform'), k=chKey(f.challan.value), e=k&&FINQ.find(x=>x.id==='c_'+k&&x.id!==f.eid.value);
   $('#shint').innerHTML=e&&e.name?`⚠ Sale challan ${esc(e.challan)} is already entered (${esc(e.name)}). <a href="#" onclick="staffEdit('${e.id}');return false">Open it to change</a> — do not enter it twice.`
@@ -2774,9 +2773,16 @@ function staffEdit(id){
   $('#shint').innerHTML=`Changing sale challan <b>${esc(e.challan)}</b>. <a href="#" style="color:var(--red)" onclick="staffDel('${id}');return false">Delete this entry</a>`;
   scrollTo({top:0,behavior:'smooth'});
 }
+// Staff writes: say "saved" only when the cloud has really accepted it; say clearly when it was refused.
+function stWrite(pr,okMsg){
+  let done=false; toast('⏳ Saving…');
+  pr.then(()=>{done=true; toast(okMsg)}).catch(e=>{done=true; const c=(e&&e.code)||(e&&e.message)||e;
+    alert('⚠ NOT SAVED\n\n'+(/permission/.test(c)?'The app was not allowed to save this entry (Firebase Rules).\nPlease tell the owner – the entry was NOT sent to the office.':'Error: '+c)); staffView()});
+  setTimeout(()=>{if(!done) toast(navigator.onLine?'⏳ Still saving… keep the app open':'📴 No internet – saved on this phone, will be sent when online')},4000);
+}
 function staffDel(id){
   if(!confirm('Delete this entry?')) return;
-  FB.F.deleteDoc(finRef(id)).catch(e=>toast('⚠ '+(e.code||e.message))); staffView(); toast('Deleted');
+  stWrite(FB.F.deleteDoc(finRef(id)),'Deleted'); staffView();
 }
 function staffSave(ev){
   ev.preventDefault(); const f=ev.target, d=formData(f), k=chKey(d.challan);
@@ -2795,8 +2801,7 @@ function staffSave(ev){
     price:num(d.price),extra:num(d.extra),model:txt(d.model),colour:txt(d.colour),chassis:chs,engine:up(d.engine),key:up(d.key),down:num(d.down),mode:d.mode||'Cash',ref:txt(d.ref),rcvBy:d.rcvBy||'',notes:txt(d.notes),
     amount:num(d.amount),financer:txt(d.financer),exReg:exr,exModel:txt(d.exModel),exValue:num(d.exValue),by:cloudEmail,at:FB.F.serverTimestamp()};
   if(!ex) Object.assign(rec,{recd:false,recdAmt:0,recdDate:''});
-  FB.F.setDoc(finRef(id),rec,{merge:true}).catch(e=>toast('⚠ Not saved: '+(e.code||e.message)));
-  toast(navigator.onLine?'Saved ✓':'Saved – will sync when online'); staffView();
+  stWrite(FB.F.setDoc(finRef(id),rec,{merge:true}),'Saved ✓ – sent to office'); staffView();
 }
 
 $('#app').addEventListener('input',()=>{appDirty=true});
