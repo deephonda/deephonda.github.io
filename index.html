@@ -171,7 +171,7 @@ const FB_CONFIG={apiKey:"AIzaSyBwEfdGtbhXbaiqVv34K1olQDwWSvD301E",authDomain:"ho
 const FBK=KEY+'_fbcfg';
 function fbCfg(){if(FB_CONFIG)return FB_CONFIG;try{return JSON.parse(localStorage.getItem(FBK))||null}catch(e){return null}}
 const CLOUD=!!fbCfg();
-let STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],LAST_SV='';
+let STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
 let FB=null,cloudReady=false,READONLY=false,SYNCED={},UNSUB=[],appDirty=false,cloudEmail='',pendingN=0,SYNC_ST='';
 function save(){
   if(READONLY){ try{DB=JSON.parse(localStorage.getItem(KEY))||DB}catch(e){} toast('📴 No internet — this entry was not saved'); setTimeout(render,0); return }
@@ -561,7 +561,7 @@ function marginCell(s){
   if(m<lowM()) return `<span style="color:var(--amber);font-weight:700">${rs(m)}</span><div><span class="pill due" style="background:#fff3c4;color:#8a5a00">low</span></div>`;
   return `<span class="amt pos">${rs(m)}</span>${pct}`;
 }
-let salesMF='';
+let salesMF='', salesMW=false;
 function salesTable(rows,summary){
   if(!rows.length) return '<div class="empty">No sales yet.</div>';
   const sum=f=>rows.reduce((a,s)=>a+f(s),0);
@@ -582,7 +582,13 @@ function salesTable(rows,summary){
     <div class="stat"><div class="k">Customer dues</div><div class="v" style="color:var(--red)">${rs(sum(s=>Math.max(0,saleDue(s))))}</div></div>
     <div class="stat" style="cursor:pointer" onclick="go('old')"><div class="k">Old bikes taken →</div><div class="v">${rows.filter(s=>num(s.exchangeValue)>0).length}</div><div class="sub2">${rs(sum(s=>num(s.exchangeValue)))} · ${(DB.oldveh||[]).filter(o=>o.status!=='sold').length} in hand</div></div></div>
     ${holders().length?(t=>`<div class="stats" style="margin-bottom:14px">${[['biz',''],...holders().filter(p=>!isStaffH(p.id)||rows.some(s=>(s.payments||[]).some(x=>x.by===p.id))).map(p=>[p.id,p.id])].map(([f,k])=>`<div class="stat" style="cursor:pointer;${salesW===f?'outline:2px solid var(--red)':''}" onclick="salesW=salesW==='${f}'?'':'${f}';vSales()"><div class="k">Sale money with ${esc(mwName(k))}</div><div class="v" style="color:${k?'#1a56c4':'var(--green)'}">${rs(t[k]||0)}</div><div class="sub2">${rows.filter(s=>(moneyWith(s)[k]||0)>0.5).length} sales · click to see list</div></div>`).join('')}</div>`)(rows.reduce((t,s)=>{for(const [k,v] of Object.entries(moneyWith(s))) t[k]=(t[k]||0)+v; return t},{})):''}`:'';
-  return cards+`<div class="tablewrap"><table class="nice"><thead><tr><th>Sale Challan</th><th>Purch. Challan</th><th>Date</th><th>Customer</th><th>Vehicle</th><th class="num">Total</th><th class="num">Margin</th><th class="num">Finance</th><th class="num">Finance received</th><th class="num">Short / Excess</th><th>Old bike (exchange)</th><th class="num">From customer</th><th>Money with</th><th class="num">Due</th></tr></thead><tbody>
+  const mw=summary?(()=>{const G={}; rows.forEach(s=>{const k=txt(s.model)||'—', m=saleMargin(s); const g=G[k]||(G[k]={n:0,k:0,t:0,min:null,max:null,loss:0}); g.n++; if(m!=null){g.k++;g.t+=m;g.min=g.min==null?m:Math.min(g.min,m);g.max=g.max==null?m:Math.max(g.max,m);if(m<0)g.loss++}});
+    const L=Object.entries(G).sort((a,b)=>b[1].n-a[1].n); if(!L.length) return '';
+    const c=v=>v==null?'<span class="muted">—</span>':`<span class="amt ${v<0?'neg':v<lowM()?'':'pos'}" style="${v>=0&&v<lowM()?'color:#8a5a00;font-weight:700':''}">${v<0?'− ':''}${rs(Math.abs(v))}</span>`;
+    return `<details style="margin:0 0 14px" ${salesMW?'open':''} ontoggle="salesMW=this.open"><summary style="cursor:pointer;font-weight:600">Margin – model-wise (${L.length} models)</summary>
+    <div class="tablewrap" style="margin-top:8px"><table class="nice"><thead><tr><th>Model</th><th class="num">Sold</th><th class="num">Total margin</th><th class="num">Average per vehicle</th><th class="num">Lowest</th><th class="num">Highest</th><th class="num">In loss</th><th class="num">Cost missing</th></tr></thead><tbody>
+    ${L.map(([k,g])=>`<tr class="click" onclick="salesQ='${esc(k).replace(/'/g,'')}';vSales()" title="Show these sales"><td><b>${esc(k)}</b></td><td class="num">${g.n}</td><td class="num">${c(g.k?g.t:null)}</td><td class="num">${c(g.k?Math.round(g.t/g.k):null)}</td><td class="num">${c(g.min)}</td><td class="num">${c(g.max)}</td><td class="num">${g.loss?`<span class="pill due">${g.loss}</span>`:'0'}</td><td class="num">${g.n-g.k||''}</td></tr>`).join('')}</tbody></table></div></details>`})():'';
+  return cards+mw+`<div class="tablewrap"><table class="nice"><thead><tr><th>Sale Challan</th><th>Purch. Challan</th><th>Date</th><th>Customer</th><th>Vehicle</th><th class="num">Total</th><th class="num">Margin</th><th class="num">Finance</th><th class="num">Finance received</th><th class="num">Short / Excess</th><th>Old bike (exchange)</th><th class="num">From customer</th><th>Money with</th><th class="num">Due</th></tr></thead><tbody>
   ${rows.map(s=>{const due=saleDue(s);return `<tr class="click" title="Click to open" onclick="if(!event.target.closest('button,a,select'))viewSale('${s.id}')">
     <td><b>${esc(s.schallan)||'<span class="muted">—</span>'}</b><div class="sub2">Rcpt #${s.inv}</div></td>
     <td>${(st=>st&&st.challan?esc(st.challan):`<span class="muted">—</span>`)(DB.stock.find(x=>x.id===s.stockId))}</td>
@@ -2465,9 +2471,10 @@ function cloudCard(){
 // Admin side: a small read-only list of vehicles in stock, so staff can pick a vehicle by purchase challan
 function stockViewSync(){
   if(!FB||!cloudReady||STAFF) return;
-  const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine),up(s.key)])), pj=JSON.stringify(holders().map(p=>[p.id,p.name,isStaffH(p.id)?'s':'p']));
-  if(j+pj===LAST_SV) return; LAST_SV=j+pj;
-  FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j,p:pj}).catch(()=>{LAST_SV=''});
+  const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine),up(s.key)])), pj=JSON.stringify(holders().map(p=>[p.id,p.name,isStaffH(p.id)?'s':'p'])),
+    fj=JSON.stringify(DB.sales.filter(s=>txt(s.schallan)&&(num(s.finance)>0||txt(s.financer))).map(s=>[txt(s.schallan),txt(s.name),txt(s.model),up(s.chassis),num(s.finance),txt(s.financer),s.financeReceived?1:0,s.financeReceived?finRecd(s):0,s.financeRecdDate||'',s.date||'']));
+  if(j+pj+fj===LAST_SV) return; LAST_SV=j+pj+fj;
+  FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j,p:pj,f:fj}).catch(()=>{LAST_SV=''});
 }
 const chKey=v=>txt(v).toUpperCase().replace(/[^A-Z0-9]/g,'');
 const finRef=id=>FB.F.doc(FB.db,'shops',SHOP,'finentries',id);
@@ -2563,6 +2570,8 @@ function staffStart(){
   UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'stockview','all'),snap=>{
     try{STOCKV=snap.exists()?JSON.parse(snap.data().j)||[]:[]}catch(e){STOCKV=[]}
     try{STOCKP=snap.exists()&&snap.data().p?JSON.parse(snap.data().p)||[]:[]}catch(e){STOCKP=[]}
+    try{STOCKF=snap.exists()&&snap.data().f?JSON.parse(snap.data().f)||[]:[]}catch(e){STOCKF=[]}
+    if(staffTab==='fin'&&$('#fpend')) staffFinPend();
     staffDl();
   },()=>{}));
   UNSUB.push(F.onSnapshot(F.collection(db,'shops',SHOP,'finentries'),{includeMetadataChanges:true},snap=>{
@@ -2584,15 +2593,18 @@ function staffView(){
     $('#app').innerHTML=`<div class="card" style="max-width:760px;margin:16px auto">
     <h2 style="margin-top:0">Finance entry</h2>
     <form id="fform" class="grid" onsubmit="staffFinSave(event)">
-      <label>Sale Challan No<input name="challan" required autocapitalize="characters" oninput="staffFinLoad()"></label>
+      <label>Sale Challan No<input name="challan" list="sdlFC" required autocapitalize="characters" oninput="staffFinLoad()" onchange="staffFinLoad()"></label>
+      <div id="sinfo" class="span2"></div>
       <label>Finance amount (financed) ₹<input name="amount" inputmode="decimal" required></label>
       <label>Financer<input name="financer" list="sdlF" placeholder="Muthoot…"></label>
       <label>Finance amount received ₹ <span class="muted">(empty if not yet)</span><input name="recdAmt" inputmode="decimal"></label>
       <label>Date finance received<input type="date" name="recdDate"></label>
       <p id="shint" class="note span2" style="margin:0"></p>
       <div class="row span2"><button class="btn">Save</button><button type="button" class="btn plain" onclick="staffView()">Clear</button></div>
-    </form>${dls}</div>${listCard('Finance – all challans')}${foot}`;
-    staffRecd('#fform');
+    </form>${dls}${dl('sdlFC',STOCKF.filter(x=>!x[6]).map(x=>x[0]))}</div>
+    <div class="card" style="max-width:760px;margin:16px auto"><h2 style="margin:0 0 8px">Finance pending – from office sale records</h2><div id="fpend"></div></div>
+    ${listCard('Finance – my entries')}${foot}`;
+    staffRecd('#fform'); staffFinPend();
   } else {
     $('#app').innerHTML=`<div class="card" style="max-width:760px;margin:16px auto">
     <h2 style="margin-top:0">New sale entry</h2>
@@ -2661,12 +2673,26 @@ function staffCH(){
 function staffRecd(sel){const f=$(sel); if(!f||!f.recd) return; const y=f.recd.value==='1'; f.querySelectorAll('.srec').forEach(l=>l.style.display=y?'':'none');
   if(y){ if(!f.recdAmt.value) f.recdAmt.value=f.amount.value; if(!f.recdDate.value) f.recdDate.value=today() } }
 // Finance tab: typing a challan already entered loads it, so it is changed — never entered twice
+// sale record from the office for this sale challan: [challan,name,model,chassis,finance,financer,recd,recdAmt,recdDate,date]
+const stSaleF=k=>STOCKF.find(x=>chKey(x[0])===k);
 function staffFinLoad(){
-  const f=$('#fform'), k=chKey(f.challan.value), e=k&&FINQ.find(x=>x.id==='c_'+k);
+  const f=$('#fform'), k=chKey(f.challan.value), e=k&&FINQ.find(x=>x.id==='c_'+k), o=k&&stSaleF(k), box=$('#sinfo');
+  box.innerHTML=o?`<div class="note" style="margin:0;padding:8px 10px;background:#e7f6ec;border-radius:8px;color:#14532d">✓ <b>${esc(o[1])}</b> · ${esc(o[2])} · Chassis <span class="mono">${esc(o[3])}</span> · sold ${fd(o[9])}${o[4]?` · Finance ${rs(o[4])} ${esc(o[5])}`:''}${o[6]?` · <b>already received ${rs(o[7])} on ${fd(o[8])}</b>`:''}</div>`
+    :e&&e.name?`<div class="note" style="margin:0;padding:8px 10px;background:#e7f6ec;border-radius:8px;color:#14532d">✓ <b>${esc(e.name)}</b> · ${esc(e.model||'')} ${e.chassis?'· Chassis <span class="mono">'+esc(e.chassis)+'</span>':''} (your sale entry)</div>`
+    :k&&k.length>0&&(STOCKF.length||FINQ.length)?'<p class="note" style="margin:0;color:var(--amber)">No sale found with this challan yet. Check the number — or enter it, the office will match it later.</p>':'';
   if(e){ f.amount.value=num(e.amount)||''; f.financer.value=e.financer||''; f.recdAmt.value=e.recd?(num(e.recdAmt)||''):''; f.recdDate.value=e.recd?(e.recdDate||''):'';
-    $('#shint').innerHTML=`Challan <b>${esc(e.challan)}</b> is already entered${e.name?' ('+esc(e.name)+')':''} — you are changing it.` }
-  else $('#shint').innerHTML='';
+    $('#shint').innerHTML=`Challan <b>${esc(e.challan)}</b> is already entered by you — you are changing it.` }
+  else { $('#shint').innerHTML='';
+    if(o){ if(!f.amount.value) f.amount.value=o[4]||''; if(!f.financer.value) f.financer.value=o[5]||''; if(o[6]){ if(!f.recdAmt.value) f.recdAmt.value=o[7]||''; if(!f.recdDate.value) f.recdDate.value=o[8]||'' } } }
   staffRecd('#fform');
+}
+function staffFinPend(){
+  const box=$('#fpend'); if(!box) return; const done=new Set(FINQ.filter(e=>e.recd).map(e=>chKey(e.challan)));
+  const L=STOCKF.filter(x=>!x[6]&&num(x[4])>0&&!done.has(chKey(x[0]))).sort((a,b)=>(a[9]||'').localeCompare(b[9]||''));
+  box.innerHTML=!STOCKF.length?'<p class="note" style="margin:0">The list comes from the office app — the owner must open the app once (new version).</p>'
+    :L.length?`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Sale date</th><th>Customer</th><th>Vehicle</th><th class="num">Finance</th><th></th></tr>${L.map(x=>`<tr><td><b>${esc(x[0])}</b></td><td>${fd(x[9])}</td><td>${esc(x[1])}</td><td>${esc(x[2])}<div class="sub2 mono">${esc(x[3])}</div></td><td class="num">${rs(x[4])}<div class="sub2">${esc(x[5])}</div></td>
+      <td><button class="btn sm" onclick="const f=$('#fform');f.reset();f.challan.value='${esc(x[0]).replace(/'/g,'')}';staffFinLoad();scrollTo({top:0,behavior:'smooth'})">Enter received</button></td></tr>`).join('')}</table></div>
+      <p class="note" style="margin:6px 0 0">${L.length} sales with finance not yet received.</p>`:'<p class="note" style="margin:0">✓ No finance pending.</p>';
 }
 function staffFinSave(ev){
   ev.preventDefault(); const d=formData(ev.target), k=chKey(d.challan), amt=num(d.amount);
