@@ -36,6 +36,8 @@ main{max-width:1440px;margin:0 auto;padding:16px}
 .stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px}
 .stat .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .stat .v{font-size:24px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+.hwho{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:999px;padding:5px 12px;font-size:13px;margin-right:10px;line-height:1.25;max-width:100%}
+.hwho b{font-weight:700}.hwho .em{opacity:.85;font-size:12px}
 .dhero{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;background:linear-gradient(120deg,#b30000,#e02424 60%,#f05252);color:#fff;border-radius:14px;padding:20px 22px;margin-bottom:14px;box-shadow:0 6px 18px rgba(180,0,0,.18)}
 .dchip{display:inline-block;background:rgba(255,255,255,.2);border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
 .dbtn{background:#fff!important;color:#b30000!important;border:0!important;font-weight:700}
@@ -142,6 +144,7 @@ a.btn{text-decoration:none}
     <div class="sub" id="hAddr"></div>
   </div>
   <div class="grow"></div>
+  <span id="hWho" class="hwho hide"></span>
   <span id="sync" class="sub" style="margin-right:4px"></span>
   <button class="btn ghost sm" style="background:#fff" onclick="backupJSON()">⬇ Backup now</button>
   <button id="hRep" class="btn ghost sm" style="background:#fff;margin-left:6px" onclick="reportDlg()" title="Report for company visits">📊 Report</button>
@@ -195,7 +198,7 @@ const FB_CONFIG={apiKey:"AIzaSyBwEfdGtbhXbaiqVv34K1olQDwWSvD301E",authDomain:"ho
 const FBK=KEY+'_fbcfg';
 function fbCfg(){if(FB_CONFIG)return FB_CONFIG;try{return JSON.parse(localStorage.getItem(FBK))||null}catch(e){return null}}
 const CLOUD=!!fbCfg();
-let STOCKA=[], FINERR=false, MYP=null, ENQOK=null, STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
+let MYNAME='', STOCKA=[], FINERR=false, MYP=null, ENQOK=null, STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
 let FB=null,cloudReady=false,READONLY=false,SYNCED={},UNSUB=[],appDirty=false,cloudEmail='',pendingN=0,SYNC_ST='';
 function save(){
   if(STAFF){ enqNos(); staffEnqPush(); return }
@@ -2757,7 +2760,14 @@ function appRefresh(){
   try{ if(window.caches) caches.keys().then(k=>k.forEach(x=>caches.delete(x))) }catch(e){}
   const u=new URL(location.href); u.searchParams.set('r',Date.now()); location.replace(u.toString());
 }
-function setSync(s){const ho=$('#hOut'); if(ho) ho.classList.toggle('hide',!(CLOUD&&(cloudReady||STAFF))); const hr=$('#hRep'); if(hr) hr.classList.toggle('hide',STAFF||(CLOUD&&!cloudReady));if(s!==undefined)SYNC_ST=s;const t=syncLabel();const a=$('#sync');if(a)a.textContent=t+(cloudReady&&cloudEmail?' · '+cloudEmail:'');const b=$('#sync2');if(b)b.textContent=t}
+function whoChip(){const c=$('#hWho'); if(!c) return; const on=CLOUD&&(cloudReady||STAFF)&&cloudEmail; c.classList.toggle('hide',!on); if(!on) return;
+  const me=String(cloudEmail).toLowerCase();
+  if(STAFF){ const P=MYP?[['fin','Finance'],['sale','New Sale'],['enq','Enquiries']].filter(([k])=>MYP[k]).map(x=>x[1]).join(', '):'';
+    c.innerHTML=`👤 <span><b>${esc(MYNAME||me.split('@')[0])}</b> · Employee${P?` (${P})`:''}<br><span class="em">${esc(me)}</span></span>`; }
+  else { const own=emList(DB.settings.ruleAdmins||'').includes(me), u=accUsers().find(x=>x.email===me);
+    c.innerHTML=`${own||!u?'👑':'⭐'} <span><b>${u?esc(u.name):'Owner'}</b> · ${own||!u?'Owner – full access':'Full access'}<br><span class="em">${esc(me)}</span></span>`; }
+}
+function setSync(s){whoChip();const ho=$('#hOut'); if(ho) ho.classList.toggle('hide',!(CLOUD&&(cloudReady||STAFF))); const hr=$('#hRep'); if(hr) hr.classList.toggle('hide',STAFF||(CLOUD&&!cloudReady));if(s!==undefined)SYNC_ST=s;const t=syncLabel();const a=$('#sync');if(a)a.textContent=t;const b=$('#sync2');if(b)b.textContent=t}
 addEventListener('online',()=>setSync());addEventListener('offline',()=>setSync());
 
 async function cloudInit(){
@@ -3233,6 +3243,7 @@ function staffStart(){
   },()=>{}));
   UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'meta','access'),snap=>{
     const d=snap.exists()?snap.data():null, me=String(cloudEmail).toLowerCase();
+    try{MYNAME=((d&&d.j?JSON.parse(d.j):[]).find(u=>u.email===me)||{}).name||''}catch(x){MYNAME=''}
     MYP=d?{fin:(d.fin||[]).includes(me),sale:(d.sale||[]).includes(me),enq:(d.enq||[]).includes(me),full:(d.full||[]).includes(me)}:null;
     if(MYP&&MYP.full){ let n=0; try{n=+sessionStorage.getItem('fullR')||0; sessionStorage.setItem('fullR',n+1)}catch(e){} if(n<2){ location.reload(); return } }
     if(!first) staffView();
