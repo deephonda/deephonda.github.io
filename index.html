@@ -2526,8 +2526,9 @@ function finApply(){
     for(const k of ['rel','relName','phone','address']) if(txt(e[k])) s[k]=txt(e[k]);
     if(num(e.price)>0){ s.price=num(e.price); if(e.extra!=null) s.extra=num(e.extra); s.total=num(s.price)+num(s.extra) }
     // finance
-    if(num(e.amount)>0) s.finance=num(e.amount);
-    if(txt(e.financer)) s.financer=txt(e.financer);
+    const own=!!txt(e.name);   // staff's own sale entry may set finance; a finance-only entry may not overwrite the office's figures
+    if(num(e.amount)>0&&(own||!num(s.finance))) s.finance=num(e.amount);
+    if(txt(e.financer)&&(own||!txt(s.financer))) s.financer=txt(e.financer);
     let de=DB.daybook.find(x=>x.fin&&x.saleId===s.id);
     if(e.recd&&num(e.recdAmt)>0){
       Object.assign(s,{financeReceived:true,financeRecdAmt:num(e.recdAmt),financeRecdDate:e.recdDate||today()}); delete s.financeBy;
@@ -2626,6 +2627,7 @@ function staffView(){
       <div id="sinfo" class="span2"></div>
       <label>Finance amount (financed) ₹<input name="amount" inputmode="decimal" required></label>
       <label>Financer<input name="financer" list="sdlF" placeholder="Muthoot…"></label>
+      <p id="flock" class="note span2" style="margin:0"></p>
       <label>Finance amount received ₹ <span class="muted">(empty if not yet)</span><input name="recdAmt" inputmode="decimal"></label>
       <label>Date finance received<input type="date" name="recdDate"></label>
       <p id="shint" class="note span2" style="margin:0"></p>
@@ -2712,7 +2714,11 @@ function staffFinLoad(){
   if(e){ f.amount.value=num(e.amount)||''; f.financer.value=e.financer||''; f.recdAmt.value=e.recd?(num(e.recdAmt)||''):''; f.recdDate.value=e.recd?(e.recdDate||''):'';
     $('#shint').innerHTML=`Challan <b>${esc(e.challan)}</b> is already entered by you — you are changing it.` }
   else { $('#shint').innerHTML='';
-    if(o){ if(!f.amount.value) f.amount.value=o[4]||''; if(!f.financer.value) f.financer.value=o[5]||''; if(o[6]){ if(!f.recdAmt.value) f.recdAmt.value=o[7]||''; if(!f.recdDate.value) f.recdDate.value=o[8]||'' } } }
+    if(o&&o[6]){ if(!f.recdAmt.value) f.recdAmt.value=o[7]||''; if(!f.recdDate.value) f.recdDate.value=o[8]||'' } }
+  const lock=!!(o&&num(o[4])>0);
+  if(lock){ f.amount.value=o[4]; f.financer.value=o[5]||'' }
+  [f.amount,f.financer].forEach(i=>{i.readOnly=lock; i.style.background=lock?'#f1f1ef':''; i.title=lock?'Set by the office – cannot be changed here':''});
+  const ln=$('#flock'); if(ln) ln.innerHTML=lock?'🔒 Finance amount and financer come from the office sale – only enter the amount received and the date.':'';
   staffRecd('#fform');
 }
 function staffFinPend(){
@@ -2731,10 +2737,10 @@ function staffFinSave(ev){
   if(recd&&!d.recdDate){alert('Enter the date the finance amount was received.');return}
   if(!recd&&d.recdDate){alert('Enter the finance amount received (or clear the date).');return}
   if(recd&&d.recdDate>today()){alert('Date received cannot be in the future.');return}
-  const id='c_'+k, ex=FINQ.find(x=>x.id===id);
-  const rec={amount:amt,recd,recdAmt:recd?ra:0,recdDate:recd?d.recdDate:'',by:cloudEmail,at:FB.F.serverTimestamp()};
+  const id='c_'+k, ex=FINQ.find(x=>x.id===id), o=stSaleF(k);
+  const rec={amount:o&&num(o[4])>0?num(o[4]):amt,recd,recdAmt:recd?ra:0,recdDate:recd?d.recdDate:'',by:cloudEmail,at:FB.F.serverTimestamp()};
   if(!ex) rec.challan=txt(d.challan).toUpperCase();
-  if(d.financer) rec.financer=txt(d.financer);
+  if(o&&num(o[4])>0) rec.financer=txt(o[5]); else if(d.financer) rec.financer=txt(d.financer);
   FB.F.setDoc(finRef(id),rec,{merge:true}).catch(e=>toast('⚠ Not saved: '+(e.code||e.message)));
   toast(navigator.onLine?'Saved ✓':'Saved – will sync when online'); staffView();
 }
