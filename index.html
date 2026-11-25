@@ -82,6 +82,7 @@ a.fill{color:var(--amber);font-weight:600;text-decoration:none;border-bottom:1px
 .pill.due{background:var(--amber-soft);color:var(--amber)}
 .pill.open{background:#e8f0fe;color:#1a56c4}
 .pill.lost{background:#eee;color:#777}
+.saidSel{width:auto;max-width:250px;padding:5px 26px 5px 10px;border-radius:999px;font-weight:600;font-size:.86em;border:1px solid;cursor:pointer;height:auto;min-height:0}
 .muted{color:var(--muted)}
 .empty{padding:24px;text-align:center;color:var(--muted)}
 .hide{display:none!important}
@@ -185,6 +186,7 @@ let STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
 let FB=null,cloudReady=false,READONLY=false,SYNCED={},UNSUB=[],appDirty=false,cloudEmail='',pendingN=0,SYNC_ST='';
 function save(){
   if(READONLY){ try{DB=JSON.parse(localStorage.getItem(KEY))||DB}catch(e){} toast('📴 No internet — this entry was not saved'); setTimeout(render,0); return }
+  enqNos();
   try{ localStorage.setItem(KEY,JSON.stringify(DB)); storageOK=true }catch(e){ storageOK=CLOUD; if(!CLOUD) toast('⚠ Could not save — take a backup!') }
   if(CLOUD&&cloudReady) cloudPush();
 }
@@ -1200,16 +1202,50 @@ function oldVoucher(id){
 }
 
 /* ---------- enquiries ---------- */
-let enqF='Open';
+let enqF='Open', enqM='', enqFrom='', enqTo='', enqQ='';
+// Every enquiry gets a permanent number (1, 2, 3 …) in the order it was entered.
+function enqNos(){
+  const L=DB.enquiries.filter(e=>!e.no); if(!L.length) return false;
+  let n=DB.enquiries.reduce((m,e)=>Math.max(m,+e.no||0),0);
+  L.sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.created||0)-(b.created||0)).forEach(e=>e.no=++n); return true;
+}
+const eNo=e=>e.no?'E-'+e.no:'';
+function enqRows(){
+  const q=enqQ.trim().toLowerCase(), qn=q.replace(/^e-?/,''), qd=q.replace(/\D/g,'');
+  return DB.enquiries.filter(e=>(enqF==='All'||e.status===enqF)&&(!enqFrom||(e.date||'')>=enqFrom)&&(!enqTo||(e.date||'')<=enqTo)
+    &&(!q||String(e.no)===qn||(e.name||'').toLowerCase().includes(q)||(qd.length>=4&&String(e.phone||'').replace(/\D/g,'').includes(qd))||(e.model||'').toLowerCase().includes(q)))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.no||0)-(a.no||0));
+}
+function enqPeriod(){ return [enqFrom||enqTo?`${enqFrom?fd(enqFrom):'start'} to ${enqTo?fd(enqTo):'today'}`:'',enqQ?`search “${enqQ}”`:''].filter(Boolean).join(' · ') }
+function enqSetM(m){ enqM=m; if(m){enqFrom=m+'-01'; const d=new Date(+m.slice(0,4),+m.slice(5,7),0); enqTo=m+'-'+String(d.getDate()).padStart(2,'0')} else if(m===''){enqFrom='';enqTo=''} vEnq() }
 // What the customer said on the phone – one choice from this list (+ a note), and when to call again.
 const SAID=[['visit','Will visit the showroom',3],['later','Will buy later',15],['callback','Asked to call back',2],['finance','Waiting for finance / loan',7],['price','Wants a better price',3],
   ['family','Will discuss with family',5],['noans','Did not pick up',1],['off','Switched off / wrong number',2],['booked','Booked / bought from us',0],['elsewhere','Bought elsewhere',0],['noint','Not interested',0],['other','Other',3]];
 const saidL=k=>(SAID.find(x=>x[0]===k)||[,k||''])[1];
+// icon + colour for each answer
+const SAIDUI={visit:['🏍️','#e6f4ea','#1e7b34'],later:['⏳','#e8f0fe','#1a56c4'],callback:['🔁','#e8f0fe','#1a56c4'],finance:['🏦','#f3e8fd','#7b2cbf'],price:['💰','#fff4e0','#a85d00'],
+  family:['👨‍👩‍👦','#e0f5f3','#0f766e'],noans:['📵','#fff4e0','#a85d00'],off:['🚫','#fde8e8','#b42318'],booked:['✅','#e6f4ea','#1e7b34'],elsewhere:['❌','#eee','#666'],noint:['👎','#eee','#666'],other:['💬','#f1f1f1','#444'],none:['➕','#fff','#888']};
+// What he said last: from the last recorded call, or guessed from the old notes (photo import)
+function saidOf(e){
+  const C=e.calls||[], c=C[C.length-1];
+  if(c) return {k:c.said,note:c.note||''};
+  const t=txt(e.lastSaid||e.notes||''); if(!t) return {k:'none',note:''};
+  const T=t.toLowerCase(), G=[['off',/out of service|switch(ed)? ?off|wrong (no|num)|band|not reachable|invalid/],['noans',/not? (answer|pick|receiv)|did not answer|no answer|nahi utha|ring/],
+    ['elsewhere',/bought (from )?(else|other)|purchased (else|other)|le li|kahin aur/],['noint',/not (interested|buying)|no interest|nahi lena|mana/],['booked',/booked|bought from us/],
+    ['finance',/financ|loan|emi/],['price',/price|rate|discount|costly|mehng/],['family',/family|father|papa|ghar|wife|brother/],['visit',/visit|will come|showroom|aayega|aaega/],
+    ['callback',/call (back|again|later)|baad me call/],['later',/later|next month|month|baad|after|diwali|festival/]];
+  const g=G.find(([,r])=>r.test(T)); return {k:g?g[0]:'other',note:t,guess:1};
+}
+function saidChip(e){
+  const {k,note}=saidOf(e), [ic,bg,fg]=SAIDUI[k]||SAIDUI.other;
+  return `<select class="saidSel" title="Choose what he said – opens the call record" style="background:${bg};color:${fg};border-color:${fg}55" onchange="callDlg('${e.id}',this.value)">
+    ${k==='none'?`<option value="" selected>➕ Not called yet</option>`:''}${SAID.map(([x,l])=>`<option value="${x}" ${x===k?'selected':''}>${(SAIDUI[x]||[''])[0]} ${l}</option>`).join('')}</select>${note&&note!==saidL(k)?`<div class="sub2" style="margin-top:3px">“${esc(note)}”</div>`:''}`;
+}
 const callsDue=()=>DB.enquiries.filter(e=>e.status==='Open'&&e.followUp&&e.followUp<=today()).sort((a,b)=>(a.followUp||'').localeCompare(b.followUp||''));
 const addDays=n=>{const d=new Date(today());d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
-function callDlg(id){
+function callDlg(id,pre){
   const e=DB.enquiries.find(x=>x.id===id); if(!e) return; const C=e.calls||[];
-  openDlg('📞 Call – '+e.name,`<p style="margin-top:0"><b>${esc(e.name)}</b> · <a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}<br>
+  openDlg('📞 Call – '+(e.no?eNo(e)+' · ':'')+e.name,`<p style="margin-top:0"><b>${esc(e.name)}</b> · <a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}<br>
     <span class="muted">Wants ${esc(e.model||'—')}${e.exchange?' · old vehicle '+esc(e.exchange):''} · enquiry ${fd(e.date)}${e.notes?' · '+esc(e.notes):''}</span></p>
     ${C.length?`<div class="tablewrap" style="margin-bottom:10px"><table><tr><th>Called on</th><th>What the customer said</th><th>Next call</th></tr>${[...C].reverse().map(c=>`<tr><td>${fd(c.date)}</td><td style="white-space:normal">${esc(saidL(c.said))}${c.note?`<div class="sub2">${esc(c.note)}</div>`:''}</td><td>${c.next?fd(c.next):'—'}</td></tr>`).join('')}</table></div>`:'<p class="note">No calls recorded yet.</p>'}
     <form id="fcall" class="grid">
@@ -1220,7 +1256,8 @@ function callDlg(id){
       <p id="callSt" class="note span2" style="margin:0"></p>
     </form>`,
   `<button class="btn plain" onclick="dlg.close()">Cancel</button>${e.status==='Open'?`<button class="btn ghost" onclick="dlg.close();newSale(null,'${id}')">Convert to sale</button>`:''}<button class="btn" onclick="saveCall('${id}')">Save call</button>`);
-  callSaid('visit');
+  const k=pre&&SAIDUI[pre]&&pre!=='none'?pre:'visit'; $('#fcall').said.value=k; callSaid(k);
+  dlg.addEventListener('close',()=>{if(pre) render()},{once:true});
 }
 function callSaid(k){const f=$('#fcall'); if(!f) return; const x=SAID.find(s=>s[0]===k)||[];
   const closes=['booked','elsewhere','noint'].includes(k);
@@ -1239,19 +1276,19 @@ function saveCall(id){
 function callsCard(){
   const L=callsDue(), t=today();
   return `<div class="card" style="border:2px solid ${L.length?'var(--red)':'var(--line)'}"><div class="row" style="margin-bottom:${L.length?10:0}px"><h2 class="grow" style="margin:0">📞 Calls to make today (${L.length})</h2>${L.length?'<span class="note" style="margin:0">Customers whose promised date is today (or already passed)</span>':''}</div>
-  ${L.length?`<div class="tablewrap"><table><tr><th>Call date</th><th>Name</th><th>Mobile</th><th>Wants</th><th>Last time he said</th><th></th></tr>${L.map(e=>`<tr>
+  ${L.length?`<div class="tablewrap"><table><tr><th>Call date</th><th>No.</th><th>Name</th><th>Mobile</th><th>Wants</th><th>Last time he said</th><th></th></tr>${L.map(e=>`<tr>
     <td>${e.followUp<t?`<span class="pill due">${fd(e.followUp)} · ${Math.round((new Date(t)-new Date(e.followUp))/864e5)}d late</span>`:'<span class="pill open">Today</span>'}</td>
-    <td><b>${esc(e.name)}</b></td><td><a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬</a>`:''}</td>
-    <td>${esc(e.model||'')}</td><td style="white-space:normal;max-width:280px">${esc(e.lastSaid||e.notes||'—')}${e.lastCall?`<div class="sub2">on ${fd(e.lastCall)}</div>`:''}</td>
+    <td>${eNo(e)}</td><td><b>${esc(e.name)}</b></td><td><a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬</a>`:''}</td>
+    <td>${esc(e.model||'')}</td><td style="white-space:normal;max-width:300px">${saidChip(e)}${e.lastCall?`<div class="sub2">on ${fd(e.lastCall)}</div>`:''}</td>
     <td><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call / record</button></td></tr>`).join('')}</table></div>`:'<p class="note" style="margin:6px 0 0">✓ No calls due today.</p>'}</div>`;
 }
 const wa=p=>{const n=String(p||'').replace(/\D/g,'');return n.length>=10?`https://wa.me/91${n.slice(-10)}`:''};
 function enqTable(rows){
-  return `<div class="tablewrap"><table><tr><th>Date</th><th>Name</th><th>Mobile</th><th>Model wanted</th><th>Old vehicle</th><th>Next call</th><th>Status</th><th>Last time he said</th><th>Notes</th><th></th></tr>
-  ${rows.map(e=>`<tr><td>${fd(e.date)}</td><td><b>${esc(e.name)}</b></td><td>${esc(e.phone)} ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener" title="WhatsApp">💬</a>`:''}</td><td>${esc(e.model)}</td><td>${esc(e.exchange)}</td>
+  return `<div class="tablewrap"><table><tr><th>No.</th><th>Date</th><th>Name</th><th>Mobile</th><th>Model wanted</th><th>Old vehicle</th><th>Next call</th><th>Status</th><th>Last time he said</th><th>Notes</th><th></th></tr>
+  ${rows.map(e=>`<tr><td><b>${eNo(e)}</b></td><td>${fd(e.date)}</td><td><b>${esc(e.name)}</b></td><td>${esc(e.phone)} ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener" title="WhatsApp">💬</a>`:''}</td><td>${esc(e.model)}</td><td>${esc(e.exchange)}</td>
   <td>${e.followUp?(e.status==='Open'&&e.followUp<=today()?`<span class="pill due">${fd(e.followUp)}</span>`:fd(e.followUp)):''}</td>
   <td><span class="pill ${e.status==='Open'?'open':e.status==='Sold'?'in':'lost'}">${esc(e.status)}</span></td>
-  <td style="white-space:normal;min-width:160px">${esc(e.lastSaid||'')}${e.lastCall?`<div class="sub2">${fd(e.lastCall)} · ${(e.calls||[]).length} call${(e.calls||[]).length===1?'':'s'}</div>`:''}</td><td style="white-space:normal;min-width:120px">${esc(e.notes)}</td>
+  <td style="white-space:normal;min-width:180px">${saidChip(e)}${e.lastCall?`<div class="sub2">${fd(e.lastCall)} · ${(e.calls||[]).length} call${(e.calls||[]).length===1?'':'s'}</div>`:''}</td><td style="white-space:normal;min-width:120px">${esc(e.notes)}</td>
   <td style="white-space:nowrap"><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call</button> ${e.status==='Open'?`<button class="btn ghost sm" onclick="newSale(null,'${e.id}')">Convert to sale</button> `:''}<button class="btn plain sm" onclick="editEnq('${e.id}')">Edit</button> <button class="btn plain sm" style="color:var(--red)" title="Delete this enquiry" onclick="delEnq('${e.id}')">🗑 Delete</button></td></tr>`).join('')}</table></div>`;
 }
 function enqForm(e={}){
@@ -1316,22 +1353,37 @@ function saveEnqPhoto(){
   save(); dlg.close(); toast(`${out.length} enquiries added`); render();
 }
 function vEnq(){
+  if(enqNos()) save();
   $('#app').innerHTML=`${callsCard()}<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
-  <div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Enquiry register</h2>
-  <select style="width:auto" onchange="enqF=this.value;vEnq()">${opts(['Open','Sold','Lost','All'],enqF)}</select><button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button>${(n=>n?`<button class="btn plain sm" style="color:var(--red);border-color:var(--red)" onclick="delEnqAll()">🗑 Delete all (${n})</button>`:'')(DB.enquiries.filter(e=>enqF==='All'||e.status===enqF).length)}</div>
-  ${(r=>r.length?enqTable(r):'<div class="empty">No enquiries.</div>')(DB.enquiries.filter(e=>enqF==='All'||e.status===enqF).sort((a,b)=>(b.date||'').localeCompare(a.date||'')))}</div>`;
+  <div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">Enquiry register</h2>
+  <button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button><span id="enqDelBtn"></span></div>
+  <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+    <label style="margin:0">Status<select style="width:auto" onchange="enqF=this.value;vEnq()">${opts(['Open','Sold','Lost','All'],enqF)}</select></label>
+    <label style="margin:0">Month<select style="width:auto" onchange="enqSetM(this.value)"><option value="">All months</option>${[...new Set([today().slice(0,7),...DB.enquiries.map(e=>(e.date||'').slice(0,7)).filter(Boolean)])].sort().reverse().map(m=>`<option value="${m}" ${m===enqM?'selected':''}>${mLabel(m)}</option>`).join('')}</select></label>
+    <label style="margin:0">From<input type="date" style="width:auto" value="${enqFrom}" onchange="enqFrom=this.value;enqM='';vEnq()"></label>
+    <label style="margin:0">To<input type="date" style="width:auto" value="${enqTo}" onchange="enqTo=this.value;enqM='';vEnq()"></label>
+    <label style="margin:0;flex:1;min-width:200px">Find (enquiry no. / name / mobile)<input id="enqQ" placeholder="e.g. 35 or E-35 or Rohit or 98172" value="${esc(enqQ)}" oninput="enqQ=this.value;enqList()"></label>
+    ${enqFrom||enqTo||enqQ?'<button class="btn plain sm" onclick="enqM=enqFrom=enqTo=enqQ=\'\';vEnq()">✕ Clear</button>':''}
+  </div><div id="enqList"></div></div>`;
+  enqList();
+}
+function enqList(){
+  const r=enqRows(), p=enqPeriod();
+  $('#enqList').innerHTML=`<p class="note" style="margin:0 0 8px"><b>${r.length}</b> enquir${r.length===1?'y':'ies'}${p?' · '+esc(p):''}</p>`+(r.length?enqTable(r):'<div class="empty">No enquiries.</div>');
+  $('#enqDelBtn').innerHTML=r.length?`<button class="btn plain sm" style="color:var(--red);border-color:var(--red)" onclick="delEnqAll()">🗑 Delete all (${r.length})</button>`:'';
 }
 function delEnq(id){
   const e=DB.enquiries.find(x=>x.id===id); if(!e) return;
-  if(!confirm(`Delete this enquiry?\n\n${e.name||''}  ${e.phone||''}\n${e.model||''}  (${fd(e.date)})\n\nThis cannot be undone.`)) return;
+  if(!confirm(`Delete this enquiry?\n\n${eNo(e)}  ${e.name||''}  ${e.phone||''}\n${e.model||''}  (${fd(e.date)})\n\nThis cannot be undone.`)) return;
   DB.enquiries=DB.enquiries.filter(x=>x.id!==id); save(); render(); toast('Enquiry deleted');
 }
 function delEnqAll(){
-  const L=DB.enquiries.filter(e=>enqF==='All'||e.status===enqF); if(!L.length) return;
-  const what=enqF==='All'?'ALL':`all ${enqF.toUpperCase()}`;
+  const L=enqRows(); if(!L.length) return;
+  const what=(enqF==='All'?'ALL':`all ${enqF.toUpperCase()}`)+(enqPeriod()?` (${enqPeriod()})`:'');
   if(!confirm(`⚠ Delete ${what} enquiries?\n\n${L.length} enquir${L.length===1?'y':'ies'} will be deleted permanently, with their call history.\nThis cannot be undone.`)) return;
-  const t=prompt(`To confirm, type DELETE below.\n(${L.length} enquiries will be deleted)`);
-  if(t===null) return; if(t.trim().toUpperCase()!=='DELETE'){alert('Not deleted – you did not type DELETE.');return}
+  const code=String(10+Math.floor(Math.random()*90));
+  const t=prompt(`To confirm, type this number:  ${code}\n(${L.length} enquir${L.length===1?'y':'ies'} will be deleted)`);
+  if(t===null) return; if(t.replace(/\D/g,'')!==code){alert('Not deleted – the number did not match.');return}
   const ids=new Set(L.map(e=>e.id)); DB.enquiries=DB.enquiries.filter(e=>!ids.has(e.id)); save(); render(); toast(`${L.length} enquiries deleted`);
 }
 function saveEnq(id){
@@ -1417,7 +1469,7 @@ function csv(which){
       ()=>DB.sales.map(r=>({...r,purchaseChallan:(DB.stock.find(x=>x.id===r.stockId)||{}).challan||'',received:saleReceived(r),due:Math.round(saleDue(r)),financeRecdAmt:r.financeReceived?finRecd(r):'',financeShortExcess:r.financeReceived?Math.round(finDiff(r)):'',moneyWith:mwText(r)}))],
     daybook:[['date','type','head','particulars','amount','mode','paidBy','partner','paidTo','paymentType','forMonth','vendor','bill','ref','challans','notInCash'],
       ()=>dayRows().map(r=>({...r,head:headOf(r),type:r.type==='in'?'Receipt':'Payment',paidBy:r.saleId?'':PB(r),partner:r.pid?pName(r.pid):'',paidTo:r.payee?epName(r.payee):'',paymentType:r.ptype||'',forMonth:mLabel(r.forMonth),notInCash:r.by||r.old?'Yes':''}))],
-    enquiries:[['date','name','phone','model','exchange','followUp','status','lastSaid','lastCall','notes'],()=>DB.enquiries],
+    enquiries:[['no','date','name','phone','model','exchange','followUp','status','lastSaid','lastCall','notes'],()=>enqRows()],
     dealer:[['date','amount','mode','paidBy','ref','challans','particulars'],()=>oldest(dpRows()).map(r=>({...r,paidBy:PB(r)}))],
     rent:[['date','paidTo','type','forMonth','amount','mode','paidBy','ref','particulars'],()=>oldest(epRows()).map(r=>({...r,paidTo:epName(r.payee),type:r.head===H.rent?'Rent':r.ptype||'Salary',forMonth:mLabel(r.forMonth),paidBy:PB(r)}))],
     exp:[['date','head','particulars','amount','vendor','bill','mode','paidBy'],()=>oldest(exRows()).map(r=>({...r,paidBy:PB(r)}))],
@@ -1710,10 +1762,10 @@ function pdfData(which){
       foot:[['','','Total','',rs(tin),rs(tout)]]};
   }
   if(which==='enquiries'){
-    const rows=DB.enquiries.filter(e=>enqF==='All'||e.status===enqF).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-    return {title:'Enquiry Register',sub:enqF==='All'?'All enquiries':enqF,
-      head:['Date','Name','Mobile','Model wanted','Old vehicle','Follow-up','Status','Notes'],
-      rows:rows.map(e=>[fd(e.date),e.name,e.phone,e.model,e.exchange,fd(e.followUp),e.status,e.notes]),foot:[['Total: '+rows.length]]};
+    const rows=enqRows();
+    return {title:'Enquiry Register',sub:[enqF==='All'?'All enquiries':enqF,enqPeriod()].filter(Boolean).join(' · '),
+      head:['No.','Date','Name','Mobile','Model wanted','Old vehicle','Follow-up','Status','Notes'],
+      rows:rows.map(e=>[eNo(e),fd(e.date),e.name,e.phone,e.model,e.exchange,fd(e.followUp),e.status,e.notes]),foot:[['','Total: '+rows.length]]};
   }
   const PB=x=>x.by?pName(x.by)+(x.type==='in'?' (kept)':' (own pocket)'):'Business';
   if(which==='exp'){
