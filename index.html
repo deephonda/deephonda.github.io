@@ -539,7 +539,7 @@ let finF='Pending', finFr='', finM='', finFrom='', finTo='', finQ='';
 function finRows(){
   const q=finQ.trim().toLowerCase(), qk=chKey(q);
   return DB.sales.filter(s=>num(s.finance)>0||txt(s.financer)).filter(s=>
-    (finF==='All'||(finF==='Pending'?!s.financeReceived:s.financeReceived))&&(!finFr||txt(s.financer)===finFr)
+    (finF==='All'||(finF==='Pending'?!s.financeReceived:finF==='Short / excess'?s.financeReceived&&Math.abs(finDiff(s))>=0.5:s.financeReceived))&&(!finFr||txt(s.financer)===finFr)
     &&(!finFrom||(s.date||'')>=finFrom)&&(!finTo||(s.date||'')<=finTo)
     &&(!q||(qk&&chKey(s.schallan).includes(qk))||String(s.inv)===q||(s.name||'').toLowerCase().includes(q)||(s.chassis||'').toLowerCase().includes(q)))
     .sort((a,b)=>finF==='Received'?(b.financeRecdDate||'').localeCompare(a.financeRecdDate||''):(a.date||'').localeCompare(b.date||''));
@@ -550,22 +550,24 @@ function vFin(){
   const tot=sum(ALL,s=>num(s.finance)), recd=sum(ALL,finRecd), pend=sum(ALL.filter(s=>!s.financeReceived),s=>num(s.finance)), short=sum(ALL,s=>Math.min(0,finDiff(s)));
   const A=dealerAcct(), bal=A.purchase-A.paid, finToDealer=(A.by.fin||0);
   const days=s=>Math.round((new Date(today())-new Date(s.date))/864e5);
-  const G={}; ALL.forEach(s=>{const k=txt(s.financer)||'— (no financer)'; const g=G[k]||(G[k]={n:0,t:0,r:0,p:0,pn:0,sh:0}); g.n++; g.t+=num(s.finance); g.r+=finRecd(s); if(!s.financeReceived){g.p+=num(s.finance);g.pn++} g.sh+=Math.min(0,finDiff(s))});
+  const G={}; ALL.forEach(s=>{const k=txt(s.financer)||'— (no financer)'; const g=G[k]||(G[k]={n:0,t:0,r:0,p:0,pn:0,sh:0}); g.n++; g.t+=num(s.finance); g.r+=finRecd(s); if(!s.financeReceived){g.p+=num(s.finance);g.pn++} g.sh+=Math.min(0,finDiff(s)); g.ex=(g.ex||0)+Math.max(0,finDiff(s))});
   const FR=[...new Set(ALL.map(s=>txt(s.financer)).filter(Boolean))].sort();
   $('#app').innerHTML=`
   <div class="stats">
     <div class="stat"><div class="k">Total finance (${ALL.length} sales)</div><div class="v">${rs(tot)}</div></div>
     <div class="stat" style="cursor:pointer" onclick="finF='Received';vFin()"><div class="k">Received → Dealer a/c</div><div class="v" style="color:var(--green)">${rs(recd)}</div><div class="sub2">${ALL.filter(s=>s.financeReceived).length} sales · goes straight to the dealer</div></div>
     <div class="stat" style="cursor:pointer" onclick="finF='Pending';vFin()"><div class="k">Balance – not yet received</div><div class="v" style="color:var(--amber)">${rs(pend)}</div><div class="sub2">${ALL.filter(s=>!s.financeReceived).length} sales pending</div></div>
-    ${short<-0.5?`<div class="stat"><div class="k">Short received (bank cut)</div><div class="v" style="color:var(--red)">${rs(-short)}</div></div>`:''}
+    ${(()=>{const R=ALL.filter(s=>s.financeReceived), sh=R.filter(s=>finDiff(s)<=-0.5), ex=R.filter(s=>finDiff(s)>=0.5), full=R.length-sh.length-ex.length, exT=sum(ex,finDiff);
+      return `<div class="stat" style="cursor:pointer" onclick="finF='Short / excess';vFin()" title="Show only sales where finance came less or more"><div class="k">Received vs finance</div>
+      <div class="v" style="font-size:1.05em;line-height:1.5"><span style="color:var(--green)">✓ ${full} full</span><br><span style="color:var(--red)">− ${rs(-short)} short</span> <span class="sub2">(${sh.length})</span><br><span style="color:#1a56c4">+ ${rs(exT)} excess</span> <span class="sub2">(${ex.length})</span></div></div>`})()}
     <div class="stat" style="cursor:pointer" onclick="accT='dealer';go('acc')" title="Open the dealer account"><div class="k">Dealer account →</div><div class="v" style="color:${bal>0.5?'var(--red)':'var(--green)'}">${rs(Math.abs(bal))}</div><div class="sub2">${bal>=0?'balance to pay dealer':'paid in advance'} · finance ${rs(finToDealer)} + payments ${rs(A.paid-finToDealer)} = ${rs(A.paid)} paid of ${rs(A.purchase)}</div></div>
   </div>
-  <div class="card"><h2 style="margin-top:0">Financer-wise</h2><div class="tablewrap"><table class="nice"><thead><tr><th>Financer / bank</th><th class="num">Sales</th><th class="num">Finance</th><th class="num">Received → dealer</th><th class="num">Balance pending</th><th class="num">Short</th></tr></thead><tbody>
-    ${Object.entries(G).sort((a,b)=>b[1].t-a[1].t).map(([k,g])=>`<tr class="click" onclick="finFr=${k.startsWith('—')?"''":`'${esc(k).replace(/'/g,"\\'")}'`};finF='All';vFin()"><td><b>${esc(k)}</b></td><td class="num">${g.n}</td><td class="num">${rs(g.t)}</td><td class="num" style="color:var(--green)">${rs(g.r)}</td><td class="num" style="color:var(--amber)">${rs(g.p)}${g.pn?`<div class="sub2">${g.pn} sales</div>`:''}</td><td class="num">${g.sh<-0.5?`<span style="color:var(--red)">${rs(-g.sh)}</span>`:'—'}</td></tr>`).join('')}
-    </tbody><tfoot><tr class="tot"><td>Total</td><td class="num">${ALL.length}</td><td class="num">${rs(tot)}</td><td class="num">${rs(recd)}</td><td class="num">${rs(pend)}</td><td class="num">${short<-0.5?rs(-short):'—'}</td></tr></tfoot></table></div></div>
+  <div class="card"><h2 style="margin-top:0">Financer-wise</h2><div class="tablewrap"><table class="nice"><thead><tr><th>Financer / bank</th><th class="num">Sales</th><th class="num">Finance</th><th class="num">Received → dealer</th><th class="num">Balance pending</th><th class="num">Short (−) / Excess (+)</th></tr></thead><tbody>
+    ${Object.entries(G).sort((a,b)=>b[1].t-a[1].t).map(([k,g])=>`<tr class="click" onclick="finFr=${k.startsWith('—')?"''":`'${esc(k).replace(/'/g,"\\'")}'`};finF='All';vFin()"><td><b>${esc(k)}</b></td><td class="num">${g.n}</td><td class="num">${rs(g.t)}</td><td class="num" style="color:var(--green)">${rs(g.r)}</td><td class="num" style="color:var(--amber)">${rs(g.p)}${g.pn?`<div class="sub2">${g.pn} sales</div>`:''}</td><td class="num">${g.sh<-0.5?`<span style="color:var(--red)">− ${rs(-g.sh)}</span>`:''}${g.ex>=0.5?` <span style="color:#1a56c4">+ ${rs(g.ex)}</span>`:''}${g.sh>-0.5&&g.ex<0.5?'—':''}</td></tr>`).join('')}
+    </tbody><tfoot><tr class="tot"><td>Total</td><td class="num">${ALL.length}</td><td class="num">${rs(tot)}</td><td class="num">${rs(recd)}</td><td class="num">${rs(pend)}</td><td class="num">${short<-0.5?`− ${rs(-short)}`:''}${(e=>e>=0.5?` + ${rs(e)}`:'')(sum(ALL,s=>Math.max(0,finDiff(s))))}${short>-0.5&&sum(ALL,s=>Math.max(0,finDiff(s)))<0.5?'—':''}</td></tr></tfoot></table></div></div>
   <div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">Finance register</h2><button class="btn plain sm" onclick="pdfExport('fin')">📄 PDF</button></div>
   <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
-    <label style="margin:0">Status<select style="width:auto" onchange="finF=this.value;vFin()">${opts(['Pending','Received','All'],finF)}</select></label>
+    <label style="margin:0">Status<select style="width:auto" onchange="finF=this.value;vFin()">${opts(['Pending','Received','Short / excess','All'],finF)}</select></label>
     <label style="margin:0">Financer<select style="width:auto" onchange="finFr=this.value;vFin()"><option value="">All</option>${FR.map(f=>`<option ${f===finFr?'selected':''}>${esc(f)}</option>`).join('')}</select></label>
     <label style="margin:0">Month (sale)<select style="width:auto" onchange="finSetM(this.value)"><option value="">All months</option>${[...new Set(ALL.map(s=>(s.date||'').slice(0,7)).filter(Boolean))].sort().reverse().map(m=>`<option value="${m}" ${m===finM?'selected':''}>${mLabel(m)}</option>`).join('')}</select></label>
     <label style="margin:0">From<input type="date" style="width:auto" value="${finFrom}" onchange="finFrom=this.value;finM='';vFin()"></label>
@@ -577,12 +579,13 @@ function vFin(){
 }
 function finList(){
   const L=finRows(), sum=f=>L.reduce((a,s)=>a+f(s),0), days=s=>Math.round((new Date(today())-new Date(s.date))/864e5);
-  $('#finList').innerHTML=`<p class="note" style="margin:0 0 8px"><b>${L.length}</b> sales · finance ${rs(sum(s=>num(s.finance)))} · received ${rs(sum(finRecd))} · pending ${rs(sum(s=>s.financeReceived?0:num(s.finance)))}</p>`+(L.length?`<div class="tablewrap"><table class="nice"><thead><tr><th>Sale Challan</th><th>Sale date</th><th>Customer</th><th>Vehicle</th><th>Financer</th><th class="num">Finance</th><th class="num">Received</th><th>Status</th><th></th></tr></thead><tbody>
+  $('#finList').innerHTML=`<p class="note" style="margin:0 0 8px"><b>${L.length}</b> sales · finance ${rs(sum(s=>num(s.finance)))} · received ${rs(sum(finRecd))} · pending ${rs(sum(s=>s.financeReceived?0:num(s.finance)))}${(a=>a<=-0.5?` · <b style="color:var(--red)">came less ${rs(-a)}</b>`:'')(sum(s=>Math.min(0,finDiff(s))))}${(a=>a>=0.5?` · <b style="color:#1a56c4">came more ${rs(a)}</b>`:'')(sum(s=>Math.max(0,finDiff(s))))}</p>`+(L.length?`<div class="tablewrap"><table class="nice"><thead><tr><th>Sale Challan</th><th>Sale date</th><th>Customer</th><th>Vehicle</th><th>Financer</th><th class="num">Finance</th><th class="num">Received</th><th class="num">Less / more</th><th>Status</th><th></th></tr></thead><tbody>
   ${L.map(s=>{const d=finDiff(s), dd=days(s); return `<tr class="click" onclick="if(!event.target.closest('button,a'))viewSale('${s.id}')">
     <td><b>${esc(s.schallan)||'—'}</b><div class="sub2">Rcpt #${s.inv}</div></td><td>${fd(s.date)}</td>
     <td class="wrap"><b>${esc(s.name)}</b>${s.phone?`<div class="sub2">${esc(s.phone)}</div>`:''}</td><td>${esc(s.model)}<div class="sub2 mono">${esc(s.chassis||'')}</div></td>
     <td>${esc(s.financer||'—')}</td><td class="num"><b>${num(s.finance)?rs(s.finance):'<span class="muted">amount?</span>'}</b></td>
-    <td class="num">${s.financeReceived?`<b style="color:var(--green)">${rs(finRecd(s))}</b><div class="sub2">${fd(s.financeRecdDate||'')}</div>${Math.abs(d)>=0.5?`<div class="sub2" style="color:${d<0?'var(--red)':'var(--green)'}">${d<0?rs(-d)+' short':rs(d)+' excess'}</div>`:''}`:'—'}</td>
+    <td class="num">${s.financeReceived?`<b style="color:var(--green)">${rs(finRecd(s))}</b><div class="sub2">${fd(s.financeRecdDate||'')}</div>`:'—'}</td>
+    <td class="num">${!s.financeReceived?'<span class="muted">—</span>':Math.abs(d)<0.5?'<span class="amt ok" style="color:var(--green);font-weight:700">✓ Full</span>':d<0?`<b style="color:var(--red)">− ${rs(-d)}</b><div class="sub2" style="color:var(--red)">came less</div>`:`<b style="color:#1a56c4">+ ${rs(d)}</b><div class="sub2" style="color:#1a56c4">came more</div>`}</td>
     <td>${s.financeReceived?'<span class="pill in">→ Dealer a/c</span>':`<span class="pill due">Pending · ${dd}d</span>`}</td>
     <td>${s.financeReceived?`<button class="btn plain sm" onclick="financeRecv('${s.id}')">Change</button>`:`<button class="btn sm" onclick="financeRecv('${s.id}')">Mark received</button>`}</td></tr>`}).join('')}
   </tbody></table></div>`:'<div class="empty">No sales here.</div>');
@@ -1802,9 +1805,9 @@ function pdfData(which){
   if(which==='fin'){
     const rows=finRows();
     return {title:'Finance Register',sub:[finF,finFr,finFrom||finTo?`${finFrom?fd(finFrom):'start'} to ${finTo?fd(finTo):'today'}`:''].filter(Boolean).join(' · '),num:[5,6],
-      head:['Sale challan','Sale date','Customer','Vehicle','Financer','Finance','Received','Recd date','Status'],
-      rows:rows.map(s=>[s.schallan,fd(s.date),s.name,s.model,s.financer,rs(s.finance),s.financeReceived?rs(finRecd(s)):'',s.financeReceived?fd(s.financeRecdDate||''):'',s.financeReceived?'To dealer a/c':'Pending']),
-      foot:[['','','','','Total ('+rows.length+')',rs(rows.reduce((a,s)=>a+num(s.finance),0)),rs(rows.reduce((a,s)=>a+finRecd(s),0)),'','']]};
+      head:['Sale challan','Sale date','Customer','Vehicle','Financer','Finance','Received','Recd date','Less / more','Status'],
+      rows:rows.map(s=>[s.schallan,fd(s.date),s.name,s.model,s.financer,rs(s.finance),s.financeReceived?rs(finRecd(s)):'',s.financeReceived?fd(s.financeRecdDate||''):'',s.financeReceived?(d=>Math.abs(d)<0.5?'Full':d<0?'− '+rs(-d)+' less':'+ '+rs(d)+' more')(finDiff(s)):'',s.financeReceived?'To dealer a/c':'Pending']),
+      foot:[['','','','','Total ('+rows.length+')',rs(rows.reduce((a,s)=>a+num(s.finance),0)),rs(rows.reduce((a,s)=>a+finRecd(s),0)),'',(d=>Math.abs(d)<0.5?'':(d<0?'− ':'+ ')+rs(Math.abs(d)))(rows.reduce((a,s)=>a+finDiff(s),0)),'']]};
   }
   if(which==='sales'){
     const q=salesQ.toLowerCase(), rows=DB.sales.filter(s=>!q||[s.name,s.phone,s.chassis,s.engine,s.model,s.inv,s.address,s.schallan].join(' ').toLowerCase().includes(q)).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.inv-b.inv);
