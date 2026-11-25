@@ -222,6 +222,7 @@ function render(){
   if(oldSync()) save();
   if(finApply()) save();
   if(AUTO_N){ setTimeout((n=>()=>toast(`🧾 ${n} sale${n>1?'s':''} from staff added to Sales`))(AUTO_N),300); AUTO_N=0 }
+  if(AUTO_L.length){ setTimeout((l=>()=>alert(`✓ Staff finance entries linked automatically (same finance amount):\n\n${l.join('\n')}\n\nWrong? Open the sale → Cancel/fix, or tell me.`))(AUTO_L),400); AUTO_L=[] }
   if(migrateDB()){ save(); setTimeout(()=>toast('All entries now live in the Day Book'),300) }
   appDirty=false; $('#syncbar').classList.add('hide'); setSync();
   $('#hName').textContent=DB.settings.name;
@@ -2604,7 +2605,7 @@ function cloudStart(){
   },cloudErr)));
   UNSUB.push(F.onSnapshot(F.collection(db,'shops',SHOP,'finentries'),snap=>{
     FINQ=snap.docs.map(d=>({id:d.id,...d.data()}));
-    if(cloudReady){ if(finApply()) save(); if(AUTO_N){ toast(`🧾 ${AUTO_N} sale${AUTO_N>1?'s':''} from staff added to Sales`); AUTO_N=0 } remoteChanged() }
+    if(cloudReady){ if(finApply()) save(); if(AUTO_N){ toast(`🧾 ${AUTO_N} sale${AUTO_N>1?'s':''} from staff added to Sales`); AUTO_N=0 } if(AUTO_L.length){ toast('✓ Linked automatically: '+AUTO_L.join(', ')); AUTO_L=[] } remoteChanged() }
   },()=>{}));
   accListen();
   UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'meta','settings'),{includeMetadataChanges:true},snap=>{
@@ -2864,11 +2865,19 @@ const STF_S=['challan','date','name','rel','relName','phone','address','price','
 const STF=['colour','engine','key','rel','relName','address','price','extra','mode','ref','rcvBy','notes','challan','date','pchallan','name','phone','model','chassis','down','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue'];
 const stSales=e=>{const ln=(DB.settings.finLinks||{})[e.id]; if(ln){const s=DB.sales.find(x=>x.id===ln); if(s) return [s]} const k=chKey(e.challan);return k?DB.sales.filter(x=>chKey(x.schallan)===k):[]};
 // Admin side: copy each staff entry into the sale with the same Sale Challan No.
+let AUTO_L=[];
 function finApply(){
   if(!CLOUD||!cloudReady||STAFF||!FINQ.length) return false; let ch=false;
   for(const e of FINQ){
     if(!chKey(e.challan)) continue;
     let ss=stSales(e);
+    // finance-only entry with a challan no. the office doesn't have: if exactly ONE sale has the same finance amount
+    // (finance not yet received, not linked to another staff entry) → link it automatically
+    if(!ss.length&&!txt(e.name)&&num(e.amount)>0){
+      const L=DB.settings.finLinks||{}, used=new Set(Object.values(L)), taken=new Set(FINQ.filter(x=>x.id!==e.id).flatMap(x=>stSales(x).map(s=>s.id)));
+      const m=DB.sales.filter(s=>!s.financeReceived&&Math.abs(num(s.finance)-num(e.amount))<1&&!used.has(s.id)&&!taken.has(s.id));
+      if(m.length===1){ (DB.settings.finLinks||(DB.settings.finLinks={}))[e.id]=m[0].id; ss=[m[0]]; ch=true; AUTO_L.push(`${e.challan} → #${m[0].inv} ${m[0].name}`) }
+    }
     // A complete sale from staff (customer + price + a vehicle that is in stock) becomes a sale automatically.
     if(!ss.length&&txt(e.name)&&num(e.price)>0){ const ns=staffAutoSale(e); if(ns){ ss=[ns]; ch=true; AUTO_N++ } }
     const lbl=ss.length===1?`✓ In app: ${ss[0].name} · ${ss[0].model}`:ss.length>1?'TWO SALES HAVE THIS CHALLAN – office will check':'';
@@ -2973,7 +2982,7 @@ function finLinkBox(e){
   const L=[...DB.sales].sort((a,b)=>(!!a.financeReceived-!!b.financeReceived)||(num(b.finance)>0)-(num(a.finance)>0)||(b.date||'').localeCompare(a.date||''));
   const amt=num(e.amount), best=L.filter(s=>!s.financeReceived&&amt&&Math.abs(num(s.finance)-amt)<1);
   return `<div class="row" style="margin-top:8px;gap:6px;align-items:flex-end;flex-wrap:wrap"><label style="margin:0;flex:1;min-width:260px">Which sale is this? <span class="muted">(${best.length?'★ = same finance amount':'choose the customer'})</span>
-    <select id="lk_${e.id}"><option value="">— choose sale —</option>${[...best,...L.filter(s=>!best.includes(s))].map(s=>`<option value="${s.id}">${best.includes(s)?'★ ':''}#${s.inv}${s.schallan?' · challan '+esc(s.schallan):''} · ${esc(s.name)} · ${esc(s.model)} · finance ${rs(s.finance)}${s.financeReceived?' (recd)':''}</option>`).join('')}</select></label>
+    <select id="lk_${e.id}"><option value="">— choose sale —</option>${[...best,...L.filter(s=>!best.includes(s))].map(s=>`<option value="${s.id}" ${best[0]===s?'selected':''}>${best.includes(s)?'★ ':''}#${s.inv}${s.schallan?' · challan '+esc(s.schallan):''} · ${esc(s.name)} · ${esc(s.model)} · finance ${rs(s.finance)}${s.financeReceived?' (recd)':''}</option>`).join('')}</select></label>
     <button class="btn sm" onclick="finLink('${e.id}')">Link to this sale</button></div>`;
 }
 function finLink(id){
