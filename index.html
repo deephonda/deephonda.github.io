@@ -1984,7 +1984,7 @@ function planStock(rows){
 function planSales(rows){
   const h=readRecords(rows,SALES_F); if(!h||!('chassis' in h.idx||'engine' in h.idx)||!('name' in h.idx)) return null;
   const add=[],skip=[],err=[];
-  const sc=new Set(DB.sales.map(s=>s.chassis).filter(Boolean)), se=new Set(DB.sales.map(s=>s.engine).filter(Boolean));
+  const sc=new Set(DB.sales.map(s=>s.chassis).filter(Boolean)), se=new Set(DB.sales.map(s=>s.engine).filter(Boolean)), seenSC=new Set();
   for(const {o,line} of h.recs){
     const relT=txt(o.rel).toLowerCase(), modeT=txt(o.mode).toLowerCase();
     const r={inv:parseInt(num(o.inv))||null,schallan:txt(o.schallan),date:toISO(o.date)||today(),name:txt(o.name),rel:/w/.test(relT)?'W/o':/d/.test(relT)?'D/o':/c/.test(relT)?'C/o':'S/o',
@@ -1996,7 +1996,8 @@ function planSales(rows){
     if(!r.name){err.push(`Row ${line}: customer name is empty`);continue}
     if(!r.chassis&&!r.engine){err.push(`Row ${line}: no chassis / engine no`);continue}
     if((r.chassis&&sc.has(r.chassis))||(r.engine&&se.has(r.engine))){skip.push(`Row ${line}: sale of ${r.chassis||r.engine} already exists`);continue}
-    if(r.schallan&&schSame(r.schallan)){skip.push(`Row ${line}: sale challan ${r.schallan} is already used`);continue}
+    if(r.schallan&&(schSame(r.schallan)||seenSC.has(chKey(r.schallan)))){skip.push(`Row ${line}: sale challan ${r.schallan} is already used${seenSC.has(chKey(r.schallan))?' (twice in this file)':''}`);continue}
+    if(r.schallan) seenSC.add(chKey(r.schallan));
     const st=DB.stock.find(x=>(r.chassis&&x.chassis===r.chassis)||(r.engine&&x.engine===r.engine));
     if(st&&st.status==='sold'&&st.saleId){skip.push(`Row ${line}: ${r.chassis||r.engine} is already marked sold`);continue}
     if(!r.model&&!st){err.push(`Row ${line}: model is empty and vehicle not found in stock`);continue}
@@ -2700,7 +2701,7 @@ function staffView(){
       <p class="note span2" style="margin:0">When the finance money comes, enter it in the <b>Finance</b> tab.</p>
       <p id="shint" class="note span2" style="margin:0"></p>
       <div class="row span2"><button class="btn">Save sale</button><button type="button" class="btn plain" onclick="staffView()">Clear</button></div>
-    </form>${dls}<span id="sdlS"></span></div>${listCard('My sale entries')}${foot}`;
+    </form>${dls}<span id="sdlS"></span></div>${listCard('Sales saved today')}${foot}`;
     $('#sform').date.value=today(); staffDl(); staffCalc();
   }
   staffList();
@@ -2776,9 +2777,12 @@ function staffHint(){const f=$('#sform'), k=chKey(f.challan.value), e=k&&FINQ.fi
     :e?`Finance for challan ${esc(e.challan)} is already entered — the sale details will be added to it.`:''}
 function staffList(){
   const q=String(staffQ).trim().toLowerCase(), qk=chKey(q);
-  const L=FINQ.filter(e=>!q||(qk&&chKey(e.challan).includes(qk))||String(e.name||'').toLowerCase().includes(q)).sort((a,b)=>(b.at?.seconds||9e12)-(a.at?.seconds||9e12));
+  let L=FINQ.filter(e=>!q||(qk&&chKey(e.challan).includes(qk))||String(e.name||'').toLowerCase().includes(q)).sort((a,b)=>(b.at?.seconds||9e12)-(a.at?.seconds||9e12));
   const pend=e=>e._p?' <span class="muted">⏳</span>':'';
-  if(!L.length){$('#slist').innerHTML='<div class="empty">No entries yet.</div>';return}
+  // New Sale tab: only today's saved sales (older ones drop off by themselves; search finds any day)
+  const savedDay=e=>{const t=e.at&&e.at.seconds?new Date(e.at.seconds*1000):new Date(); t.setMinutes(t.getMinutes()-t.getTimezoneOffset()); return t.toISOString().slice(0,10)};
+  if(staffTab!=='fin'&&!q) L=L.filter(e=>e.name&&savedDay(e)===today());
+  if(!L.length){$('#slist').innerHTML=`<div class="empty">${staffTab!=='fin'&&!q?'No sale saved today yet. (Older sales: type the challan or name in Search.)':'No entries yet.'}</div>`;return}
   $('#slist').innerHTML=staffTab==='fin'
     ?`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Financed</th><th>Received</th><th></th></tr>${L.map(e=>`<tr>
       <td><b>${esc(e.challan)}</b></td><td>${esc(e.name||'')}<div class="sub2">${esc(e.financer||'')}</div></td><td>${num(e.amount)?rs(e.amount):'—'}</td>
