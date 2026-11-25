@@ -195,7 +195,7 @@ const FB_CONFIG={apiKey:"AIzaSyBwEfdGtbhXbaiqVv34K1olQDwWSvD301E",authDomain:"ho
 const FBK=KEY+'_fbcfg';
 function fbCfg(){if(FB_CONFIG)return FB_CONFIG;try{return JSON.parse(localStorage.getItem(FBK))||null}catch(e){return null}}
 const CLOUD=!!fbCfg();
-let FINERR=false, MYP=null, ENQOK=null, STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
+let STOCKA=[], FINERR=false, MYP=null, ENQOK=null, STAFF=false,FINQ=[],staffQ='',STOCKV=[],STOCKP=[],STOCKF=[],LAST_SV='';
 let FB=null,cloudReady=false,READONLY=false,SYNCED={},UNSUB=[],appDirty=false,cloudEmail='',pendingN=0,SYNC_ST='';
 function save(){
   if(STAFF){ enqNos(); staffEnqPush(); return }
@@ -232,6 +232,7 @@ function render(){
   if(STAFF){ if(dlg.open) dlg.close(); staffView(); return }
   if(CLOUD&&!cloudReady&&!READONLY) return;
   if(DB.sales.some(x=>x.financeBy)||DB.daybook.some(d=>d.fin&&d.by)){DB.sales.forEach(x=>delete x.financeBy);DB.daybook.forEach(d=>{if(d.fin) delete d.by});save()}
+  if(DB.sales.some(x=>!num(x.exchangeValue)&&(nilish(x.exchangeReg)||nilish(x.exchange))&&(x.exchangeReg||x.exchange))){DB.sales.forEach(x=>{if(!num(x.exchangeValue)){if(nilish(x.exchangeReg))delete x.exchangeReg;if(nilish(x.exchange))delete x.exchange}});save()}
   if(oldSync()) save();
   if(finApply()) save();
   if(AUTO_N){ setTimeout((n=>()=>toast(`🧾 ${n} sale${n>1?'s':''} from staff added to Sales`))(AUTO_N),300); AUTO_N=0 }
@@ -3029,8 +3030,9 @@ function stockViewSync(){
   if(!FB||!cloudReady||STAFF) return;
   const j=JSON.stringify(DB.stock.filter(isIn).map(s=>[txt(s.challan),txt(s.model),txt(s.colour),up(s.chassis),up(s.engine),up(s.key)])), pj=JSON.stringify(holders().map(p=>[p.id,p.name,isStaffH(p.id)?'s':'p'])),
     fj=JSON.stringify(DB.sales.filter(s=>txt(s.schallan)&&(num(s.finance)>0||txt(s.financer))).map(s=>[txt(s.schallan),txt(s.name),txt(s.model),up(s.chassis),num(s.finance),txt(s.financer),s.financeReceived?1:0,s.financeReceived?finRecd(s):0,s.financeRecdDate||'',s.date||'']));
-  if(j+pj+fj===LAST_SV) return; LAST_SV=j+pj+fj;
-  FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j,p:pj,f:fj}).catch(()=>{LAST_SV=''});
+  const aj=JSON.stringify(DB.sales.filter(s=>txt(s.schallan)).map(s=>[txt(s.schallan),txt(s.name),s.date||'',txt(s.model),up(s.chassis)]));
+  if(j+pj+fj+aj===LAST_SV) return; LAST_SV=j+pj+fj+aj;
+  FB.F.setDoc(FB.F.doc(FB.db,'shops',SHOP,'stockview','all'),{j,p:pj,f:fj,a:aj}).catch(()=>{LAST_SV=''});
 }
 const chKey=v=>txt(v).toUpperCase().replace(/[^A-Z0-9]/g,'');
 const finRef=id=>FB.F.doc(FB.db,'shops',SHOP,'finentries',id);
@@ -3053,9 +3055,10 @@ function finApply(){
     }
     // A complete sale from staff (customer + price + a vehicle that is in stock) becomes a sale automatically.
     if(!ss.length&&txt(e.name)&&num(e.price)>0){ const ns=staffAutoSale(e); if(ns){ ss=[ns]; ch=true; AUTO_N++ } }
-    const lbl=ss.length===1?`✓ In app: ${ss[0].name} · ${ss[0].model}`:ss.length>1?'TWO SALES HAVE THIS CHALLAN – office will check':'';
+    const dup=stDup(e);
+    const lbl=dup?`⚠ Already sold in office (${dup.name}) – not added`:ss.length===1?`✓ In app: ${ss[0].name} · ${ss[0].model}`:ss.length>1?'TWO SALES HAVE THIS CHALLAN – office will check':'';
     if((e.m||'')!==lbl){ e.m=lbl; FB.F.updateDoc(finRef(e.id),{m:lbl}).catch(()=>{}) }
-    if(ss.length!==1) continue;
+    if(ss.length!==1||dup) continue;
     const s=ss[0], ver=JSON.stringify(STF.map(k=>e[k]??''));
     if(s.finSrc===ver&&s.finSrcId===e.id) continue;
     const mine=s.finSrcId===e.id;
@@ -3088,7 +3091,7 @@ function finApply(){
       Object.assign(pe,{date:p.date,amount:dp,mode:p.mode||'Cash',particulars:`Sale #${s.inv} – ${s.name} (${s.model})${p.ref?' · '+p.ref:''}`}); if(p.by) pe.by=p.by; else delete pe.by;
     } else if(p&&dp<=0){ s.payments=s.payments.filter(x=>x.id!==pid); DB.daybook=DB.daybook.filter(x=>x.payId!==pid) }
     // old vehicle taken in exchange
-    if(txt(e.exReg)||txt(e.exModel)||num(e.exValue)){
+    if((txt(e.exReg)&&!nilish(e.exReg))||(txt(e.exModel)&&!nilish(e.exModel))||num(e.exValue)){
       if(txt(e.exReg)) s.exchangeReg=up(e.exReg); if(txt(e.exModel)) s.exchange=txt(e.exModel); s.exchangeValue=num(e.exValue);
     }
     // purchase challan on the vehicle
@@ -3133,7 +3136,11 @@ function staffAutoSale(e){
   DB.sales.push(sale); st.status='sold'; st.saleId=sid;
   return sale;
 }
-const stWait=()=>FINQ.filter(e=>chKey(e.challan)&&stSales(e).length!==1);
+// a staff SALE entry whose challan is a sale the office already made itself = double entry (never copied into the sale)
+const stDup=e=>{ if(!txt(e.name)||(DB.settings.finLinks||{})[e.id]) return null; const ss=stSales(e); if(ss.length!==1) return null; const s=ss[0];
+  return s.fromStaff===e.id||String(s.notes||'').includes('Entered by '+(e.by||'staff'))?null:s };
+const nilish=v=>/^(nil+|na|n\/a|none|no|nahi|-+|0)$/i.test(txt(v));
+const stWait=()=>FINQ.filter(e=>chKey(e.challan)&&(stSales(e).length!==1||stDup(e)));
 function finBanner(){
   const n=CLOUD&&cloudReady?stWait().length:0;
   return n?`<div class="warn" style="cursor:pointer" onclick="finUnmatched()">🧾 <b>${n} ${n>1?'entries':'entry'} from staff</b> are not in Sales yet (challan no. does not match any sale, vehicle not in stock, or price missing). <u>Click to link / add</u></div>`:''}
@@ -3147,7 +3154,7 @@ function finUnmatched(){
     Down payment ${rs(e.down)} · Finance ${rs(e.amount)} ${esc(e.financer||'')} · ${e.recd?`Finance recd ${rs(e.recdAmt)} on ${fd(e.recdDate)}`:'Finance pending'}
     ${txt(e.exReg)||txt(e.exModel)?`<br>Old vehicle: ${esc(e.exModel)} ${esc(e.exReg)} · ${rs(e.exValue)}`:''}
     <div class="sub2">by ${esc(e.by||'')}${txt(e.name)?(num(e.price)<=0?' · <b style="color:var(--amber)">price not entered</b>':!staffVehicle(e)?' · <b style="color:var(--amber)">vehicle not found in stock – choose it</b>':''):` · finance only – <b style="color:var(--amber)">no office sale has challan ${esc(e.challan)}</b>. Choose the right sale below.`}</div>
-    ${stSales(e).length>1?'<p class="warn" style="margin:6px 0 0">Two sales already have this challan no. — fix the sale challan in Sales.</p>':!txt(e.name)?finLinkBox(e):`<button class="btn sm" style="margin-top:6px" onclick="staffToSale('${e.id}')">Create sale</button>`} <button class="btn plain sm" style="margin-top:6px;color:var(--red)" onclick="staffEntryDelete('${e.id}');finUnmatched()">Delete</button></div>`).join('')}`,
+    ${stDup(e)?`<p class="warn" style="margin:6px 0 0">⚠ DOUBLE ENTRY – the office already has this sale: <a href="#" onclick="dlg.close();viewSale('${stDup(e).id}');return false">#${stDup(e).inv} ${esc(stDup(e).name)} · ${esc(stDup(e).model)} · ${fd(stDup(e).date)}</a>. Nothing from this entry was added. Delete it.</p>`:stSales(e).length>1?'<p class="warn" style="margin:6px 0 0">Two sales already have this challan no. — fix the sale challan in Sales.</p>':!txt(e.name)?finLinkBox(e):`<button class="btn sm" style="margin-top:6px" onclick="staffToSale('${e.id}')">Create sale</button>`} <button class="btn plain sm" style="margin-top:6px;color:var(--red)" onclick="staffEntryDelete('${e.id}');finUnmatched()">Delete</button></div>`).join('')}`,
   '<button class="btn" onclick="dlg.close()">Close</button>');
 }
 // A finance entry whose challan no. matches no sale: the owner picks the right sale once.
@@ -3195,6 +3202,7 @@ function staffStart(){
     try{STOCKP=snap.exists()&&snap.data().p?JSON.parse(snap.data().p)||[]:[]}catch(e){STOCKP=[]}
     window.__svOK=snap.exists();
     try{STOCKF=snap.exists()&&snap.data().f?JSON.parse(snap.data().f)||[]:[]}catch(e){STOCKF=[]}
+    try{STOCKA=snap.exists()&&snap.data().a?JSON.parse(snap.data().a)||[]:[]}catch(e){STOCKA=[]}
     if(staffTab==='fin'&&$('#fpend')) staffFinPend();
     staffDl();
   },()=>{}));
@@ -3362,8 +3370,8 @@ function staffFinSave(ev){
   if(o&&num(o[4])>0) rec.financer=txt(o[5]); else if(d.financer) rec.financer=txt(d.financer);
   stWrite(FB.F.setDoc(finRef(id),rec,{merge:true}),'Saved ✓ – sent to office'); staffView();
 }
-function staffHint(){const f=$('#sform'), k=chKey(f.challan.value), e=k&&FINQ.find(x=>x.id==='c_'+k&&x.id!==f.eid.value);
-  $('#shint').innerHTML=e&&e.name?`🔒 Sale challan ${esc(e.challan)} is already saved (${esc(e.name)}) and cannot be changed. If something is wrong, tell the office.`
+function staffHint(){const f=$('#sform'), k=chKey(f.challan.value), e=k&&FINQ.find(x=>x.id==='c_'+k&&x.id!==f.eid.value), off=k&&STOCKA.find(x=>chKey(x[0])===k);
+  $('#shint').innerHTML=off?`<span style="color:var(--red)">🔒 Sale challan ${esc(off[0])} is already sold in the office (${esc(off[1])} · ${fd(off[2])}). Cannot be entered again.</span>`:e&&e.name?`🔒 Sale challan ${esc(e.challan)} is already saved (${esc(e.name)}) and cannot be changed. If something is wrong, tell the office.`
     :e?`Finance for challan ${esc(e.challan)} is already entered — the sale details will be added to it.`:''}
 function staffList(){
   const q=String(staffQ).trim().toLowerCase(), qk=chKey(q);
@@ -3376,14 +3384,14 @@ function staffList(){
   if(!L.length){$('#slist').innerHTML=`<div class="empty">${!q?(staffTab!=='fin'?'No sale saved today yet.':'No finance entry saved today yet.')+' (Older entries: type the challan or name in Search.)':'No entries found.'}</div>`;return}
   $('#slist').innerHTML=staffTab==='fin'
     ?`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Financed</th><th>Received</th><th></th></tr>${L.map(e=>`<tr>
-      <td><b>${esc(e.challan)}</b></td><td>${esc(e.name||(stSaleF(chKey(e.challan))||[])[1]||'')}<div class="sub2">${esc(e.financer||'')}</div>${String(e.m||'').startsWith('✓')?`<div class="sub2" style="color:var(--green,#15803d)">${esc(e.m)}</div>`:'<div class="sub2"><span class="pill due">⏳ Yet to be approved</span></div>'}</td><td>${num(e.amount)?rs(e.amount):'—'}</td>
+      <td><b>${esc(e.challan)}</b></td><td>${esc(e.name||(stSaleF(chKey(e.challan))||[])[1]||'')}<div class="sub2">${esc(e.financer||'')}</div>${String(e.m||'').startsWith('✓')?`<div class="sub2" style="color:var(--green,#15803d)">${esc(e.m)}</div>`:String(e.m||'').startsWith('⚠')?`<div class="sub2" style="color:var(--red)">${esc(e.m)}</div>`:'<div class="sub2"><span class="pill due">⏳ Yet to be approved</span></div>'}</td><td>${num(e.amount)?rs(e.amount):'—'}</td>
       <td>${e.recd?`<span class="pill in">${rs(e.recdAmt)}</span> ${fd(e.recdDate)}${Math.abs(num(e.recdAmt)-num(e.amount))>=0.5&&num(e.amount)?`<div class="sub2">${num(e.recdAmt)<num(e.amount)?rs(num(e.amount)-num(e.recdAmt))+' short':rs(num(e.recdAmt)-num(e.amount))+' excess'}</div>`:''}`:num(e.amount)?'<span class="pill due">pending</span>':''}${pend(e)}</td>
       <td>${finLocked(e)?'<span class="muted" title="Approved by the office – cannot be changed">🔒 Approved</span>':`<button class="btn plain sm" onclick="staffEdit('${e.id}')">Edit</button>`}</td></tr>`).join('')}</table></div>`
     :`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Down pay</th><th>Finance</th><th>Old vehicle</th><th>Status</th></tr>${L.filter(e=>e.name).map(e=>`<tr>
       <td><b>${esc(e.challan)}</b><div class="sub2">${fd(e.date)}</div></td><td>${esc(e.name)}<div class="sub2">${esc(e.model||'')}</div></td><td>${rs(e.down)}</td>
       <td>${num(e.amount)?rs(e.amount):'Cash sale'}<div class="sub2">${esc(e.financer||'')}</div></td>
       <td>${txt(e.exReg)||txt(e.exModel)?`${esc(e.exReg)}<div class="sub2">${esc(e.exModel)} · ${rs(e.exValue)}</div>`:'—'}</td>
-      <td style="white-space:nowrap">${e._p?'<span class="muted">⏳ sending…</span>':String(e.m||'').startsWith('✓')?'<span class="pill in">✓ Approved</span>':'<span class="pill due">⏳ Yet to be approved</span>'}</td></tr>`).join('')}</table></div>`;
+      <td style="white-space:nowrap">${e._p?'<span class="muted">⏳ sending…</span>':String(e.m||'').startsWith('✓')?'<span class="pill in">✓ Approved</span>':String(e.m||'').startsWith('⚠')?`<span style="color:var(--red);font-weight:600;white-space:normal">${esc(e.m)}</span>`:'<span class="pill due">⏳ Yet to be approved</span>'}</td></tr>`).join('')}</table></div>`;
 }
 function staffEdit(id){
   const e=FINQ.find(x=>x.id===id); if(!e) return;
@@ -3415,6 +3423,10 @@ function staffSave(ev){
   if(d.date>today()){alert('Sale date cannot be in the future.');return}
   const id='c_'+k, ex=FINQ.find(x=>x.id===id);
   if(ex&&ex.name){ alert(`🔒 Sale challan ${ex.challan} is already saved (${ex.name}).\n\nA saved sale cannot be changed or entered again. If something is wrong, tell the office.`); return }
+  const off=STOCKA.find(x=>chKey(x[0])===k);
+  if(off){ alert(`🔒 Sale challan ${off[0]} is ALREADY SOLD in the office records\n(${off[1]} · ${off[3]||''} · ${fd(off[2])}).\n\nIt cannot be entered again. Check the challan no.`); return }
+  const och=up(d.chassis)&&STOCKA.find(x=>x[4]&&x[4]===up(d.chassis));
+  if(och){ alert(`🔒 Chassis ${och[4]} is ALREADY SOLD in the office records (challan ${och[0]}, ${och[1]}).\n\nIt cannot be sold again.`); return }
   const chs=up(d.chassis), dc=chs&&FINQ.find(x=>x.id!==id&&up(x.chassis)===chs);
   if(dc&&!confirm(`⚠ Possible DOUBLE ENTRY\n\nChassis ${chs} is already entered with sale challan ${dc.challan} (${dc.name}).\n\nSave anyway?`)) return;
   const exr=up(d.exReg), dx=exr&&FINQ.find(x=>x.id!==id&&up(x.exReg)===exr);
