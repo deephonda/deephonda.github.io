@@ -121,6 +121,7 @@ a.btn{text-decoration:none}
   <div class="grow"></div>
   <span id="sync" class="sub" style="margin-right:4px"></span>
   <button class="btn ghost sm" style="background:#fff" onclick="backupJSON()">⬇ Backup now</button>
+  <button class="btn ghost sm" style="background:#fff;margin-left:6px" onclick="appRefresh()" title="Reload the app and get the latest data">⟳ Refresh</button>
   <button id="hOut" class="btn ghost sm hide" style="background:#fff;margin-left:6px" onclick="cloudLogout()">⎋ Logout</button>
 </header>
 <nav id="nav"></nav>
@@ -548,6 +549,19 @@ function financeUndo(id){
   const s=DB.sales.find(x=>x.id===id); s.financeReceived=false; delete s.financeRecdAmt; delete s.financeRecdDate;
   DB.daybook=DB.daybook.filter(x=>!(x.fin&&x.saleId===id)); save(); render(); viewSale(id);
 }
+// Margin = what the customer pays for the vehicle (price + accessories − discount) − purchase cost of the vehicle
+const lowM=()=>num(DB.settings.lowMargin)||1000;
+const saleCost=s=>{const st=DB.stock.find(x=>x.id===s.stockId); return st&&num(st.cost)>0?num(st.cost):null};
+const saleMargin=s=>{const c=saleCost(s); return c==null?null:num(s.price)+num(s.extra)-num(s.discount)-c};
+function marginCell(s){
+  const m=saleMargin(s), st=DB.stock.find(x=>x.id===s.stockId);
+  if(m==null) return `<a href="#" class="fill" onclick="${st?`editStock('${st.id}')`:'go(\'stock\')'};return false" title="Purchase price of this vehicle is not entered">cost ?</a>`;
+  const pct=num(s.price)?` <span class="sub2">${(m/num(s.price)*100).toFixed(1)}%</span>`:'';
+  if(m<0) return `<span class="amt neg" style="font-weight:700">− ${rs(-m)}</span><div><span class="pill due">LOSS</span></div>`;
+  if(m<lowM()) return `<span style="color:var(--amber);font-weight:700">${rs(m)}</span><div><span class="pill due" style="background:#fff3c4;color:#8a5a00">low</span></div>`;
+  return `<span class="amt pos">${rs(m)}</span>${pct}`;
+}
+let salesMF='';
 function salesTable(rows,summary){
   if(!rows.length) return '<div class="empty">No sales yet.</div>';
   const sum=f=>rows.reduce((a,s)=>a+f(s),0);
@@ -558,6 +572,9 @@ function salesTable(rows,summary){
   const tD=sum(s=>finDiff(s));
   const cards=summary?`<div class="stats" style="margin-bottom:14px">
     <div class="stat"><div class="k">Total sales</div><div class="v">${rows.length}</div><div class="sub2">${rs(sum(s=>num(s.total)))}</div></div>
+    ${(()=>{const M=rows.map(saleMargin), known=M.filter(m=>m!=null), neg=known.filter(m=>m<0).length, low=known.filter(m=>m>=0&&m<lowM()).length, miss=M.length-known.length;
+      return `<div class="stat" style="cursor:pointer;${salesMF?'outline:2px solid var(--red)':''}" onclick="salesMF=salesMF?'':'bad';vSales()" title="Click to show only loss / low-margin sales"><div class="k">Margin</div><div class="v" style="color:${known.reduce((a,m)=>a+m,0)<0?'var(--red)':'var(--green)'}">${rs(known.reduce((a,m)=>a+m,0))}</div>
+      <div class="sub2">${neg?`<b style="color:var(--red)">${neg} in loss</b> · `:''}${low?`<b style="color:#8a5a00">${low} low</b> · `:''}${miss?`${miss} cost missing`:''}${!neg&&!low&&!miss?'all fine':''}</div></div>`})()}
     <div class="stat"><div class="k">Finance (bill)</div><div class="v">${rs(sum(s=>num(s.finance)))}</div></div>
     <div class="stat"><div class="k">Finance received</div><div class="v" style="color:var(--green)">${rs(sum(s=>finRecd(s)))}</div></div>
     <div class="stat"><div class="k">Finance pending</div><div class="v" style="color:var(--amber)">${rs(sum(s=>num(s.finance)&&!s.financeReceived?num(s.finance):0))}</div></div>
@@ -565,7 +582,7 @@ function salesTable(rows,summary){
     <div class="stat"><div class="k">Customer dues</div><div class="v" style="color:var(--red)">${rs(sum(s=>Math.max(0,saleDue(s))))}</div></div>
     <div class="stat" style="cursor:pointer" onclick="go('old')"><div class="k">Old bikes taken →</div><div class="v">${rows.filter(s=>num(s.exchangeValue)>0).length}</div><div class="sub2">${rs(sum(s=>num(s.exchangeValue)))} · ${(DB.oldveh||[]).filter(o=>o.status!=='sold').length} in hand</div></div></div>
     ${holders().length?(t=>`<div class="stats" style="margin-bottom:14px">${[['biz',''],...holders().filter(p=>!isStaffH(p.id)||rows.some(s=>(s.payments||[]).some(x=>x.by===p.id))).map(p=>[p.id,p.id])].map(([f,k])=>`<div class="stat" style="cursor:pointer;${salesW===f?'outline:2px solid var(--red)':''}" onclick="salesW=salesW==='${f}'?'':'${f}';vSales()"><div class="k">Sale money with ${esc(mwName(k))}</div><div class="v" style="color:${k?'#1a56c4':'var(--green)'}">${rs(t[k]||0)}</div><div class="sub2">${rows.filter(s=>(moneyWith(s)[k]||0)>0.5).length} sales · click to see list</div></div>`).join('')}</div>`)(rows.reduce((t,s)=>{for(const [k,v] of Object.entries(moneyWith(s))) t[k]=(t[k]||0)+v; return t},{})):''}`:'';
-  return cards+`<div class="tablewrap"><table class="nice"><thead><tr><th>Sale Challan</th><th>Purch. Challan</th><th>Date</th><th>Customer</th><th>Vehicle</th><th class="num">Total</th><th class="num">Finance</th><th class="num">Finance received</th><th class="num">Short / Excess</th><th>Old bike (exchange)</th><th class="num">From customer</th><th>Money with</th><th class="num">Due</th></tr></thead><tbody>
+  return cards+`<div class="tablewrap"><table class="nice"><thead><tr><th>Sale Challan</th><th>Purch. Challan</th><th>Date</th><th>Customer</th><th>Vehicle</th><th class="num">Total</th><th class="num">Margin</th><th class="num">Finance</th><th class="num">Finance received</th><th class="num">Short / Excess</th><th>Old bike (exchange)</th><th class="num">From customer</th><th>Money with</th><th class="num">Due</th></tr></thead><tbody>
   ${rows.map(s=>{const due=saleDue(s);return `<tr class="click" title="Click to open" onclick="if(!event.target.closest('button,a,select'))viewSale('${s.id}')">
     <td><b>${esc(s.schallan)||'<span class="muted">—</span>'}</b><div class="sub2">Rcpt #${s.inv}</div></td>
     <td>${(st=>st&&st.challan?esc(st.challan):`<span class="muted">—</span>`)(DB.stock.find(x=>x.id===s.stockId))}</td>
@@ -573,6 +590,7 @@ function salesTable(rows,summary){
     <td class="wrap"><b>${esc(s.name)}</b><div class="sub2">${esc(s.rel||'')} ${esc(s.relName||'')}${s.phone?' · '+esc(s.phone):''}</div></td>
     <td class="wrap">${esc(s.model)} <span class="muted">${esc(s.colour||'')}</span><div class="sub2 mono">${esc(s.chassis)}</div></td>
     <td class="num"><b>${rs(s.total)}</b></td>
+    <td class="num" style="${(m=>m!=null&&m<0?'background:#fdecec':m!=null&&m<lowM()?'background:#fffbea':'')(saleMargin(s))}">${marginCell(s)}</td>
     <td class="num">${finCellN(s)}</td>
     <td class="num">${recCell(s)}</td>
     <td class="num">${diffCell(s)}</td>
@@ -580,7 +598,7 @@ function salesTable(rows,summary){
     <td class="num">${rs(saleReceived(s))}${num(s.exchangeValue)?`<div class="sub2">+ old bike ${rs(s.exchangeValue)}</div>`:''}</td>
     <td style="white-space:nowrap">${mwCell(s)}</td>
     <td class="num">${due>0.5?`<span class="pill due">${rs(due)}</span>`:'<span class="pill in">Paid</span>'}</td></tr>`}).join('')}</tbody>
-  <tfoot><tr class="tot"><td colspan="5">Total (${rows.length})</td><td class="num">${rs(sum(s=>num(s.total)))}</td><td class="num">${rs(sum(s=>num(s.finance)))}</td><td class="num">${rs(sum(s=>finRecd(s)))}</td>
+  <tfoot><tr class="tot"><td colspan="5">Total (${rows.length})</td><td class="num">${rs(sum(s=>num(s.total)))}</td><td class="num">${(t=>`<span class="amt ${t<0?'neg':'pos'}">${t<0?'− ':''}${rs(Math.abs(t))}</span>`)(sum(s=>saleMargin(s)||0))}</td><td class="num">${rs(sum(s=>num(s.finance)))}</td><td class="num">${rs(sum(s=>finRecd(s)))}</td>
     <td class="num">${Math.abs(tD)<0.5?'—':`<span class="amt ${tD<0?'neg':'pos'}">${tD<0?'− ':'+ '}${rs(Math.abs(tD))}</span>`}</td><td><b>${rs(sum(s=>num(s.exchangeValue)))}</b></td><td class="num">${rs(sum(s=>saleReceived(s)))}</td><td style="white-space:nowrap;font-size:12px">${(t=>Object.entries(t).filter(([,v])=>v>0.5).map(([k,v])=>`${esc(mwName(k))} ${rs(v)}`).join('<br>'))(rows.reduce((t,s)=>{for(const [k,v] of Object.entries(moneyWith(s))) t[k]=(t[k]||0)+v; return t},{}))}</td><td class="num">${rs(sum(s=>Math.max(0,saleDue(s))))}</td></tr></tfoot></table></div>`;
 }
 function vSales(){
@@ -592,7 +610,7 @@ function vSales(){
 }
 function salesList(){
   const q=salesQ.toLowerCase();
-  $('#salesList').innerHTML=salesTable(DB.sales.filter(s=>(!salesW||(moneyWith(s)[salesW==='biz'?'':salesW]||0)>0.5)).filter(s=>!q||[s.name,s.phone,s.chassis,s.engine,s.model,s.inv,s.address,s.schallan].join(' ').toLowerCase().includes(q)).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.inv-a.inv),true);
+  $('#salesList').innerHTML=salesTable(DB.sales.filter(s=>!salesMF||(m=>m!=null&&m<lowM())(saleMargin(s))).filter(s=>(!salesW||(moneyWith(s)[salesW==='biz'?'':salesW]||0)>0.5)).filter(s=>!q||[s.name,s.phone,s.chassis,s.engine,s.model,s.inv,s.address,s.schallan].join(' ').toLowerCase().includes(q)).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.inv-a.inv),true);
 }
 const hasEx=s=>!!(txt(s.exchange)||txt(s.exchangeReg)||num(s.exchangeValue));
 function setExchange(id){
@@ -617,6 +635,7 @@ function viewSale(id){
   <table><tr><td class="muted">Date</td><td>${fd(s.date)}</td></tr><tr><td class="muted">Sale Challan</td><td>${esc(s.schallan)||'—'} <button class="btn plain sm" onclick="setSChallan('${s.id}')">${s.schallan?'Change':'+ Fill'}</button></td></tr><tr><td class="muted">Purchase Challan</td><td>${esc((DB.stock.find(x=>x.id===s.stockId)||{}).challan)||'—'}</td></tr><tr><td class="muted">Customer</td><td><b>${esc(s.name)}</b> ${esc(s.rel)} ${esc(s.relName)}<br>${esc(s.address)}<br>${esc(s.phone)}</td></tr>
   <tr><td class="muted">Vehicle</td><td>${esc(s.model)} · ${esc(s.colour)}<br><span class="mono">Ch: ${esc(s.chassis)}<br>Eng: ${esc(s.engine)} · Key: ${esc(s.key)}</span></td></tr>
   <tr><td class="muted">Price + extra</td><td>${rs(s.price)} + ${rs(s.extra)} = <b>${rs(s.total)}</b></td></tr>
+  <tr><td class="muted">Margin</td><td style="white-space:normal">${(m=>m==null?'<span class="muted">Purchase price not entered</span>':`${marginCell(s)} <span class="sub2">(purchase ${rs(saleCost(s))}${num(s.discount)?' · discount '+rs(s.discount):''})</span>`)(saleMargin(s))}</td></tr>
   <tr><td class="muted">Finance</td><td style="white-space:normal">${num(s.finance)?`Bill: <b>${rs(s.finance)}</b>`:'<span class="muted">amount not entered</span>'}${s.financer?' · '+esc(s.financer):''} <button class="btn plain sm" onclick="setFinance('${s.id}')">${num(s.finance)?'Change':'+ Fill'}</button>
     ${num(s.finance)?(s.financeReceived?`<br>Received <b>${rs(finRecd(s))}</b> · ${fd(s.financeRecdDate||'')} <span class="pill open">to dealer a/c</span> ${diffPill(finDiff(s))||'<span class="pill in">Full</span>'}${s.financeNote?`<div class="muted" style="font-size:12px">${esc(s.financeNote)}</div>`:''} <button class="btn plain sm" onclick="financeRecv('${s.id}')">Change</button>`:`<br><span class="pill due">pending</span> <button class="btn sm" onclick="financeRecv('${s.id}')">Mark finance received</button>`):''}</td></tr>
   <tr><td class="muted">Old bike (exchange)</td><td style="white-space:normal">${hasEx(s)?`<b>${esc(s.exchange)||'—'}</b> · No. <b class="mono">${esc(s.exchangeReg)||'—'}</b><br>Value deducted: <b>${rs(s.exchangeValue)}</b>`:'<span class="muted">None</span>'} <button class="btn plain sm" onclick="setExchange('${s.id}')">${hasEx(s)?'Change':'+ Add'}</button></td></tr>
@@ -1178,6 +1197,7 @@ function vSet(){
     <label>Showroom name<input name="name" value="${esc(S.name)}"></label><label class="span2">Address<input name="address" value="${esc(S.address)}"></label>
     <label>Phones<input name="phones" value="${esc(S.phones)}"></label><label>GSTIN<input name="gstin" value="${esc(S.gstin)}"></label>
     <label>Next receipt no<input name="nextInv" type="number" value="${S.nextInv}"></label>
+    <label>Low margin alert below ₹<input name="lowMargin" inputmode="decimal" value="${lowM()}"></label>
     <label class="span2">Models (one per line)<textarea name="models">${esc(S.models.join('\n'))}</textarea></label>
     <label class="span2">Colours (one per line)<textarea name="colours">${esc(S.colours.join('\n'))}</textarea></label>
   </form><div style="margin-top:10px"><button class="btn" onclick="saveSet()">Save settings</button></div></div>
@@ -1214,6 +1234,7 @@ function vSet(){
 function saveSet(){
   const d=formData($('#fset')); const S=DB.settings;
   Object.assign(S,{name:d.name,address:d.address,phones:d.phones,gstin:d.gstin,nextInv:Math.max(1,parseInt(d.nextInv)||1),
+    lowMargin:num(d.lowMargin)||1000,
     models:d.models.split('\n').map(x=>x.trim()).filter(Boolean),colours:d.colours.split('\n').map(x=>x.trim()).filter(Boolean)});
   save(); render(); toast('Settings saved');
 }
@@ -2255,6 +2276,11 @@ function syncLabel(){
   if(SYNC_ST==='err') return '⚠ Sync problem';
   if(pendingN>0) return navigator.onLine?'⏳ Saving…':'📴 Offline – will sync when online';
   return '☁ Synced';
+}
+function appRefresh(){
+  if(pendingN>0&&!navigator.onLine&&!confirm('Some entries have not reached the cloud yet (no internet). Refresh anyway? They stay saved on this device.')) return;
+  try{ if(window.caches) caches.keys().then(k=>k.forEach(x=>caches.delete(x))) }catch(e){}
+  const u=new URL(location.href); u.searchParams.set('r',Date.now()); location.replace(u.toString());
 }
 function setSync(s){const ho=$('#hOut'); if(ho) ho.classList.toggle('hide',!(CLOUD&&(cloudReady||STAFF)));if(s!==undefined)SYNC_ST=s;const t=syncLabel();const a=$('#sync');if(a)a.textContent=t+(cloudReady&&cloudEmail?' · '+cloudEmail:'');const b=$('#sync2');if(b)b.textContent=t}
 addEventListener('online',()=>setSync());addEventListener('offline',()=>setSync());
