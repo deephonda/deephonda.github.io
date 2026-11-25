@@ -99,7 +99,16 @@ dialog .df{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8
 #syncbar .btn{background:#fff;color:#1a56c4;border-color:#fff}
 #print{display:none}
 @media print{
+  @page{margin:8mm}
   body>*:not(#print){display:none!important}
+  #print .rp h2{font-size:15px;margin:14px 0 6px;color:#b91c1c;border-bottom:1px solid #ccc;padding-bottom:3px}
+  #print .rp table{width:100%;border-collapse:collapse;margin-bottom:6px}
+  #print .rp th{background:#f3f3f3}
+  #print .rp .num{text-align:right}
+  #print .rp .kp{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+  #print .rp .kp div{border:1px solid #bbb;border-radius:6px;padding:6px 10px;min-width:120px}
+  #print .rp .kp b{display:block;font-size:17px}
+  #print .rp tr{page-break-inside:avoid}
   #print{display:block;padding:10mm;font-size:13px}
   #print table{font-size:13px}
   #print th,#print td{border:1px solid #999;white-space:normal}
@@ -121,6 +130,7 @@ a.btn{text-decoration:none}
   <div class="grow"></div>
   <span id="sync" class="sub" style="margin-right:4px"></span>
   <button class="btn ghost sm" style="background:#fff" onclick="backupJSON()">⬇ Backup now</button>
+  <button id="hRep" class="btn ghost sm" style="background:#fff;margin-left:6px" onclick="reportDlg()" title="Report for company visits">📊 Report</button>
   <button class="btn ghost sm" style="background:#fff;margin-left:6px" onclick="appRefresh()" title="Reload the app and get the latest data">⟳ Refresh</button>
   <button id="hOut" class="btn ghost sm hide" style="background:#fff;margin-left:6px" onclick="cloudLogout()">⎋ Logout</button>
 </header>
@@ -2304,6 +2314,42 @@ function saveChallan(){
   save(); dlg.close(); toast(`${out.length} vehicles added to stock`+(skipped.length?` · ${skipped.length} already existed, skipped`:'')); go('stock');
 }
 
+/* ---------- report (for company / dealer visits) ---------- */
+function reportDlg(){
+  const m=today().slice(0,8)+'01';
+  openDlg('📊 Report',`<form id="frp" class="grid">
+    <label>From<input type="date" name="from" value="${m}"></label><label>To<input type="date" name="to" value="${today()}"></label>
+    <label class="span2">Quick<select onchange="const f=$('#frp'),t=today(),d=new Date();if(this.value==='m'){f.from.value=t.slice(0,8)+'01'}else if(this.value==='lm'){d.setDate(1);d.setMonth(d.getMonth()-1);const a=d.toISOString().slice(0,8)+'01';const e=new Date(d.getFullYear(),d.getMonth()+1,0);f.from.value=a;f.to.value=e.getFullYear()+'-'+String(e.getMonth()+1).padStart(2,'0')+'-'+String(e.getDate()).padStart(2,'0');return}else if(this.value==='t'){f.from.value=t}else if(this.value==='y'){f.from.value=(t.slice(5,7)>='04'?t.slice(0,4):String(+t.slice(0,4)-1))+'-04-01'}f.to.value=t"><option value="">— choose —</option><option value="t">Today</option><option value="m">This month</option><option value="lm">Last month</option><option value="y">This financial year</option></select></label>
+    <p class="span2" style="margin:6px 0 0"><b>Include</b></p>
+    ${[['sum','Sales summary – model-wise',1],['list','Sales list (customer, vehicle, chassis, financer)',1],['fin','Finance – financer-wise, pending',1],['stock','Stock in hand – model & colour-wise',1],['stockl','Stock list with chassis no. & days in stock',1],['old','Exchange (old vehicles)',1],['enq','Enquiries',1],['money','Prices & amounts (turn off for the company)',0]].map(([k,l,on])=>`<label class="span2" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px;font-weight:500"><input type="checkbox" name="${k}" ${on?'checked':''} style="width:auto"> ${l}</label>`).join('')}
+  </form>`,`<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="makeReport()">🖨 Print / Save as PDF</button>`);
+}
+function makeReport(){
+  const f=$('#frp'), o={from:f.from.value,to:f.to.value}; ['sum','list','fin','stock','stockl','old','enq','money'].forEach(k=>o[k]=f[k].checked);
+  if(!o.from||!o.to||o.from>o.to){alert('Choose valid dates.');return}
+  const S=DB.settings, inR=d=>d&&d>=o.from&&d<=o.to, sales=DB.sales.filter(x=>inR(x.date)).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||num(a.inv)-num(b.inv));
+  const T=(h,rows,numc=[])=>`<table><tr>${h.map((x,i)=>`<th class="${numc.includes(i)?'num':''}">${x}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${numc.includes(i)?'num':''}">${c}</td>`).join('')}</tr>`).join('')}</table>`;
+  const grp=(L,kf)=>{const G={}; L.forEach(x=>{const k=kf(x)||'—'; (G[k]=G[k]||[]).push(x)}); return Object.entries(G).sort((a,b)=>b[1].length-a[1].length)};
+  const age=d=>d?Math.max(0,Math.round((new Date(today())-new Date(d))/864e5)):'';
+  const inStock=DB.stock.filter(isIn), fin=sales.filter(x=>num(x.finance)>0), M=o.money;
+  let h=`<div class="rp"><div class="rc"><div class="hd"><div><h3>${esc(S.name)}</h3><div>${esc(S.address)}</div><div>Ph: ${esc(S.phones)}${S.gstin?' · GSTIN '+esc(S.gstin):''}</div></div>
+    <div style="text-align:right"><b>SHOWROOM REPORT</b><br>${fd(o.from)} to ${fd(o.to)}<br>Printed ${fd(today())}</div></div></div>
+    <div class="kp"><div>Vehicles sold<b>${sales.length}</b></div><div>On finance<b>${fin.length}</b></div><div>Cash sales<b>${sales.length-fin.length}</b></div><div>In stock today<b>${inStock.length}</b></div>
+    <div>Old vehicles taken<b>${sales.filter(x=>num(x.exchangeValue)>0||txt(x.exchangeReg)).length}</b></div><div>Enquiries<b>${DB.enquiries.filter(e=>inR(e.date)).length}</b></div>${M?`<div>Sales value<b>${rs(sales.reduce((a,x)=>a+num(x.total),0))}</b></div>`:''}</div>`;
+  if(o.sum){ const G=grp(sales,x=>x.model); h+=`<h2>Sales – model-wise</h2>`+(G.length?T(['Model','Sold','On finance','Cash',...(M?['Sales value']:[])],G.map(([k,L])=>[esc(k),L.length,L.filter(x=>num(x.finance)>0).length,L.filter(x=>!num(x.finance)).length,...(M?[rs(L.reduce((a,x)=>a+num(x.total),0))]:[])]).concat([['<b>Total</b>',`<b>${sales.length}</b>`,`<b>${fin.length}</b>`,`<b>${sales.length-fin.length}</b>`,...(M?[`<b>${rs(sales.reduce((a,x)=>a+num(x.total),0))}</b>`]:[])]]),[1,2,3,4]):'<p>No sales in this period.</p>') }
+  if(o.list&&sales.length){ h+=`<h2>Sales list (${sales.length})</h2>`+T(['#','Date','Sale challan','Customer','Mobile','Model / colour','Chassis no','Engine no','Finance',...(M?['Price']:[])],sales.map((x,i)=>[i+1,fd(x.date),esc(x.schallan||'—'),esc(x.name)+(x.relName?`<br><small>${esc(x.rel||'')} ${esc(x.relName)}</small>`:''),esc(x.phone||''),esc([x.model,x.colour].filter(Boolean).join(' ')),esc(x.chassis||''),esc(x.engine||''),num(x.finance)?esc(x.financer||'Finance')+(M?'<br>'+rs(x.finance):''):'Cash',...(M?[rs(x.total)]:[])]),M?[9]:[]) }
+  if(o.fin){ const G=grp(fin,x=>txt(x.financer)); const pend=DB.sales.filter(x=>num(x.finance)>0&&!x.financeReceived);
+    h+=`<h2>Finance – financer-wise (this period)</h2>`+(G.length?T(['Financer','Cases','Received','Pending',...(M?['Finance amount']:[])],G.map(([k,L])=>[esc(k),L.length,L.filter(x=>x.financeReceived).length,L.filter(x=>!x.financeReceived).length,...(M?[rs(L.reduce((a,x)=>a+num(x.finance),0))]:[])]),[1,2,3,4]):'<p>No finance cases in this period.</p>');
+    h+=`<p><b>Finance pending (all dates): ${pend.length} case${pend.length===1?'':'s'}</b>${M?' · '+rs(pend.reduce((a,x)=>a+num(x.finance),0)):''}</p>`;
+    if(pend.length) h+=T(['Sale date','Sale challan','Customer','Model','Financer','Days',...(M?['Amount']:[])],pend.sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(x=>[fd(x.date),esc(x.schallan||'—'),esc(x.name),esc(x.model),esc(x.financer||''),age(x.date),...(M?[rs(x.finance)]:[])]),M?[5,6]:[5]) }
+  if(o.stock){ const G=grp(inStock,x=>x.model); h+=`<h2>Stock in hand today (${inStock.length})</h2>`+(G.length?T(['Model','Colours','Qty'],G.map(([k,L])=>[esc(k),grp(L,x=>x.colour).map(([c,l])=>`${esc(c)} ${l.length}`).join(', '),L.length]).concat([['<b>Total</b>','',`<b>${inStock.length}</b>`]]),[2]):'<p>No vehicles in stock.</p>') }
+  if(o.stockl&&inStock.length){ h+=`<h2>Stock list</h2>`+T(['#','Model','Colour','Chassis no','Engine no','Purchase challan','Received','Days in stock'],inStock.sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map((x,i)=>[i+1,esc(x.model),esc(x.colour||''),esc(x.chassis||''),esc(x.engine||''),esc(x.challan||''),fd(x.date||''),age(x.date)]),[7]) }
+  if(o.old){ const L=sales.filter(x=>num(x.exchangeValue)>0||txt(x.exchangeReg)); h+=`<h2>Exchange – old vehicles taken (${L.length})</h2>`+(L.length?T(['Date','Customer','New vehicle','Old vehicle','Old vehicle no',...(M?['Value']:[])],L.map(x=>[fd(x.date),esc(x.name),esc(x.model),esc(x.exchange||''),esc(x.exchangeReg||''),...(M?[rs(x.exchangeValue)]:[])]),M?[5]:[]):'<p>None in this period.</p>') }
+  if(o.enq){ const L=DB.enquiries.filter(e=>inR(e.date)); h+=`<h2>Enquiries (${L.length})</h2>`+(L.length?T(['Status','Count'],grp(L,e=>e.status).map(([k,l])=>[esc(k),l.length]),[1])+T(['Model wanted','Enquiries'],grp(L,e=>e.model).map(([k,l])=>[esc(k),l.length]),[1]):'<p>No enquiries in this period.</p>') }
+  h+=`<div class="rc"><div class="sign"><div>Prepared by</div><div>For ${esc(S.name)}</div></div></div></div>`;
+  $('#print').innerHTML=h; dlg.close(); setTimeout(()=>window.print(),100);
+}
+
 /* ---------- cloud sync (Firebase) ---------- */
 const SHOP='chhachhrauli', FBV='12.19.0', CPK=KEY+'_cloudproj', PRE=KEY+'_precloud';
 const COLS=['stock','sales','daybook','enquiries','partners','capital','dealerPay','expPay','expenses','oldveh'];
@@ -2323,7 +2369,7 @@ function appRefresh(){
   try{ if(window.caches) caches.keys().then(k=>k.forEach(x=>caches.delete(x))) }catch(e){}
   const u=new URL(location.href); u.searchParams.set('r',Date.now()); location.replace(u.toString());
 }
-function setSync(s){const ho=$('#hOut'); if(ho) ho.classList.toggle('hide',!(CLOUD&&(cloudReady||STAFF)));if(s!==undefined)SYNC_ST=s;const t=syncLabel();const a=$('#sync');if(a)a.textContent=t+(cloudReady&&cloudEmail?' · '+cloudEmail:'');const b=$('#sync2');if(b)b.textContent=t}
+function setSync(s){const ho=$('#hOut'); if(ho) ho.classList.toggle('hide',!(CLOUD&&(cloudReady||STAFF))); const hr=$('#hRep'); if(hr) hr.classList.toggle('hide',STAFF||(CLOUD&&!cloudReady));if(s!==undefined)SYNC_ST=s;const t=syncLabel();const a=$('#sync');if(a)a.textContent=t+(cloudReady&&cloudEmail?' · '+cloudEmail:'');const b=$('#sync2');if(b)b.textContent=t}
 addEventListener('online',()=>setSync());addEventListener('offline',()=>setSync());
 
 async function cloudInit(){
