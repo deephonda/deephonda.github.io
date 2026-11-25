@@ -36,6 +36,19 @@ main{max-width:1440px;margin:0 auto;padding:16px}
 .stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px}
 .stat .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .stat .v{font-size:24px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+.dhero{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;background:linear-gradient(120deg,#b30000,#e02424 60%,#f05252);color:#fff;border-radius:14px;padding:20px 22px;margin-bottom:14px;box-shadow:0 6px 18px rgba(180,0,0,.18)}
+.dchip{display:inline-block;background:rgba(255,255,255,.2);border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
+.dbtn{background:#fff!important;color:#b30000!important;border:0!important;font-weight:700}
+.dalert{border:1px solid;border-radius:999px;padding:7px 14px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;background:#fff}
+.dalert.red{color:#b42318;border-color:#f3b4ae;background:#fdf0ef}.dalert.amber{color:#8a5a00;border-color:#f1d39a;background:#fff8eb}
+.dstats .stat{border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.04);transition:transform .1s}.dstats .stat:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.dstats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}.dstats .stat .v{font-size:21px}@media(min-width:1000px){.dstats{grid-template-columns:repeat(4,1fr)}}
+.tcard{background:linear-gradient(180deg,#fff,#fbfbfa)}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:10px}
+.ttile{display:flex;gap:12px;align-items:center;background:var(--tb);border-radius:14px;padding:14px;cursor:pointer;transition:transform .1s}.ttile:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.tic{font-size:26px;width:48px;height:48px;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.tk{font-size:12px;color:#555;text-transform:uppercase;letter-spacing:.4px;font-weight:600}.tv{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}.ts{font-size:12px;color:#555;line-height:1.35}@media(min-width:1000px){.tgrid{grid-template-columns:repeat(4,1fr)}}@media(max-width:640px){.tgrid{grid-template-columns:1fr 1fr}.ttile{flex-direction:column;align-items:flex-start;gap:6px;padding:12px}.tic{width:38px;height:38px;font-size:20px}.tv{font-size:20px}}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:14px;margin-bottom:14px}.dgrid .card{margin:0}
 .stat.red .v{color:var(--red)}
 form.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px 12px}
 label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:4px;font-weight:600}
@@ -232,40 +245,110 @@ function render(){
 }
 
 /* ---------- dashboard ---------- */
+let dashDay='';
+function dayShift(n){const d=new Date(dashDay||today());d.setDate(d.getDate()+n);const k=d.toISOString().slice(0,10);dashDay=k>=today()?'':k;vDash()}
+function todayCard(){
+  const D=dashDay||today(), isT=D===today(), DB_=DB.daybook.filter(d=>d.date===D&&!d.old);
+  const calls=[]; DB.enquiries.forEach(e=>(e.calls||[]).forEach(c=>{if(c.date===D) calls.push({...c,e})}));
+  const who={}; calls.forEach(c=>{const k=c.by?(accUsers().find(u=>u.email===c.by)||{}).name||c.by.split('@')[0]:'office'; who[k]=(who[k]||0)+1});
+  const good=calls.filter(c=>['visit','booked','finance','price','family'].includes(c.said)).length, noans=calls.filter(c=>['noans','off'].includes(c.said)).length;
+  const newE=DB.enquiries.filter(e=>e.date===D);
+  const sales=DB.sales.filter(s=>s.date===D), sv=sales.reduce((a,s)=>a+num(s.total),0);
+  const buy=DB.stock.filter(x=>x.date===D), bv=buy.reduce((a,x)=>a+num(x.cost),0);
+  const finIn=DB.sales.filter(s=>s.financeReceived&&s.financeRecdDate===D), fv=finIn.reduce((a,s)=>a+finRecd(s),0);
+  const dealerP=DB_.filter(d=>d.type==='out'&&d.head===H.dealer), dpv=dealerP.reduce((a,d)=>a+num(d.amount),0);
+  const outs=DB_.filter(d=>d.type==='out'&&d.head!==H.dealer), ov=outs.reduce((a,d)=>a+num(d.amount),0);
+  const ins=DB_.filter(d=>d.type==='in'&&!d.fin), iv=ins.reduce((a,d)=>a+num(d.amount),0), insSale=ins.filter(d=>d.saleId).reduce((a,d)=>a+num(d.amount),0);
+  const heads={}; outs.forEach(d=>{const k=headOf(d)||'Other';heads[k]=(heads[k]||0)+num(d.amount)});
+  const tile=(ic,bg,k,v,sub,go_)=>`<div class="ttile" style="--tb:${bg}" ${go_?`onclick="${go_}"`:''}><div class="tic">${ic}</div><div style="min-width:0"><div class="tk">${k}</div><div class="tv">${v}</div><div class="ts">${sub||'&nbsp;'}</div></div></div>`;
+  return `<div class="card tcard"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+    <h2 style="margin:0">📅 ${isT?'Today':'Day'} at a glance <span class="muted" style="font-weight:400;font-size:15px">· ${new Date(D).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</span></h2>
+    <div class="row" style="gap:6px"><button class="btn plain sm" onclick="dayShift(-1)">◀ Previous day</button>${isT?'':`<button class="btn plain sm" onclick="dayShift(1)">Next ▶</button><button class="btn sm" onclick="dashDay='';vDash()">Today</button>`}
+    <input type="date" value="${D}" max="${today()}" style="width:auto" onchange="dashDay=this.value>=today()?'':this.value;vDash()"></div></div>
+  <div class="tgrid">
+    ${tile('📞','#e8f0fe','Customers called',calls.length,calls.length?`${Object.entries(who).map(([k,n])=>`${esc(k)} ${n}`).join(' · ')}${good?` · <b style="color:var(--green)">${good} positive</b>`:''}${noans?` · ${noans} no answer`:''}`:'no calls recorded',"go('enq')")}
+    ${tile('📝','#f3e8fd','New enquiries',newE.length,newE.slice(0,3).map(e=>esc(e.name)).join(', ')+(newE.length>3?' …':''),"go('enq')")}
+    ${tile('🏍️','#e6f4ea','Sales',sales.length,sales.length?`${rs(sv)} · ${sales.slice(0,3).map(s=>esc(s.model)).join(', ')}`:'no sale',"go('sales')")}
+    ${tile('📦','#fff4e0','Purchase (stock in)',buy.length,buy.length?`${rs(bv)} at cost`:'no purchase',"go('stock')")}
+    ${tile('💵','#e6f4ea','Money received',rs(iv),iv?`sales ${rs(insSale)}${iv-insSale>0.5?` · other ${rs(iv-insSale)}`:''}`:'nothing received',"go('day')")}
+    ${tile('💸','#fdecec','Money spent',rs(ov),ov?Object.entries(heads).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([k,v])=>`${esc(k.replace(' Expenses',''))} ${rs(v)}`).join(' · '):'no expense',"go('day')")}
+    ${tile('🏦','#e0f5f3','Finance came → dealer',rs(fv),fv?`${finIn.length} sale${finIn.length>1?'s':''} · straight to dealer a/c`:'no finance came',"finF='Received';go('fin')")}
+    ${tile('🏢','#eef0f3','Paid to dealer',rs(dpv),`total to dealer today ${rs(dpv+fv)}`,"accT='dealer';go('acc')")}
+  </div></div>`;
+}
 function vDash(){
-  const t=today(), m=t.slice(0,7);
-  const inStock=DB.stock.filter(isIn);
+  const t=today(), m=t.slice(0,7), d0=new Date(t);
+  const inStock=DB.stock.filter(isIn), stockVal=inStock.reduce((a,x)=>a+num(x.cost),0);
   const todaySales=DB.sales.filter(s=>s.date===t);
   const monthSales=DB.sales.filter(s=>(s.date||'').startsWith(m));
-  const dues=DB.sales.filter(s=>saleDue(s)>0.5);
-  const finPend=DB.sales.filter(s=>num(s.finance)>0&&!s.financeReceived);
-  const fups=DB.enquiries.filter(e=>e.status==='Open'&&e.followUp&&e.followUp<=t);
-  const bal=dayBalance(null,null);
-  const lb=DB.settings.lastBackup;
-  const daysSince=lb?Math.floor((Date.now()-new Date(lb))/864e5):null;
+  const pm=(()=>{const d=new Date(m+'-01');d.setMonth(d.getMonth()-1);return d.toISOString().slice(0,7)})(), dayN=+t.slice(8,10);
+  const prevSameDays=DB.sales.filter(s=>(s.date||'').startsWith(pm)&&+s.date.slice(8,10)<=dayN).length;
+  const dues=DB.sales.filter(s=>saleDue(s)>0.5), duesT=dues.reduce((a,s)=>a+saleDue(s),0);
+  const finPend=DB.sales.filter(s=>num(s.finance)>0&&!s.financeReceived), finPendT=finPend.reduce((a,s)=>a+num(s.finance),0);
+  const age=s=>Math.round((d0-new Date(s.date))/864e5), finOld=finPend.filter(s=>age(s)>30);
+  const bal=dayBalance(null,null), A=dealerAcct(), dBal=A.purchase-A.paid;
+  const M=monthSales.map(saleMargin), mk=M.filter(x=>x!=null), mT=mk.reduce((a,x)=>a+x,0), loss=mk.filter(x=>x<0).length;
+  const calls=callsDue(), openE=DB.enquiries.filter(e=>e.status==='Open'), enqM=DB.enquiries.filter(e=>(e.date||'').startsWith(m)), wonM=enqM.filter(e=>e.status==='Sold').length;
+  const oldStock=inStock.filter(x=>x.date&&(d0-new Date(x.date))/864e5>60);
+  const lb=DB.settings.lastBackup, daysSince=lb?Math.floor((Date.now()-new Date(lb))/864e5):null;
+  const hr=new Date().getHours(), hi=hr<12?'Good morning':hr<17?'Good afternoon':'Good evening';
+  // last 6 months
+  const MS=[]; for(let i=5;i>=0;i--){const d=new Date(m+'-01');d.setMonth(d.getMonth()-i);const k=d.toISOString().slice(0,7);const L=DB.sales.filter(s=>(s.date||'').startsWith(k));MS.push({k,n:L.length,v:L.reduce((a,s)=>a+num(s.total),0)})}
+  const mxN=Math.max(1,...MS.map(x=>x.n));
+  // models this month + stock by model
+  const grp=(L,f)=>{const G={};L.forEach(x=>{const k=f(x)||'—';G[k]=(G[k]||0)+1});return Object.entries(G).sort((a,b)=>b[1]-a[1])};
+  const topM=grp(monthSales,s=>s.model).slice(0,6), stM=grp(inStock,s=>s.model).slice(0,8), mxT=Math.max(1,...topM.map(x=>x[1])), mxS=Math.max(1,...stM.map(x=>x[1]));
+  const bar=(l,n,mx,c,sub='')=>`<div style="display:grid;grid-template-columns:140px 1fr 44px;gap:8px;align-items:center;margin:6px 0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px" title="${esc(l)}">${esc(l)}</div><div style="background:#f2f2f0;border-radius:6px;height:14px"><div style="width:${Math.max(4,n/mx*100)}%;background:${c};height:14px;border-radius:6px"></div></div><div class="num" style="font-weight:700">${n}${sub}</div></div>`;
+  const kpi=(icon,k,v,sub,col,go_)=>`<div class="stat dk" ${go_?`style="cursor:pointer" onclick="${go_}"`:''}><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div class="k">${k}${go_?' →':''}</div><div style="font-size:24px;line-height:1;flex:none">${icon}</div></div><div class="v" style="color:${col||'inherit'}">${v}</div>${sub?`<div class="sub2">${sub}</div>`:''}</div>`;
+  const alerts=[
+    calls.length&&['📞',`${calls.length} customer call${calls.length>1?'s':''} due today`,"go('enq')",'red'],
+    finOld.length&&['🏦',`${finOld.length} finance pending over 30 days · ${rs(finOld.reduce((a,s)=>a+num(s.finance),0))}`,"finF='Pending';go('fin')",'amber'],
+    dues.length&&['💰',`${dues.length} customers owe ${rs(duesT)}`,"go('dues')",'amber'],
+    loss&&['📉',`${loss} sale${loss>1?'s':''} this month in LOSS`,"salesMF='bad';go('sales')",'red'],
+    oldStock.length&&['⏳',`${oldStock.length} vehicles in stock for over 60 days`,"go('stock')",'amber'],
+    (CLOUD&&cloudReady?stWait().length:0)&&['🧾',`${stWait().length} staff entries not in Sales`,'finUnmatched()','red'],
+  ].filter(Boolean);
   $('#app').innerHTML=`
-  ${!storageOK?'<div class="warn">⚠ Saving in this browser failed. Use “Backup now” immediately.</div>':''}${finBanner()}
+  ${!storageOK?'<div class="warn">⚠ Saving in this browser failed. Use “Backup now” immediately.</div>':''}
   ${CLOUD?((daysSince===null||daysSince>=30)&&localHas()?`<div class="warn">Your data is safe in the cloud. Still, once a month <a href="#" onclick="backupJSON();return false">take a backup</a>.</div>`:''):(daysSince===null||daysSince>=3)&&(DB.stock.length+DB.sales.length+DB.daybook.length)>0?`<div class="warn">Your data is saved only in this browser. Last backup: <b>${lb?fd(lb.slice(0,10))+' ('+daysSince+' days ago)':'never'}</b>. <a href="#" onclick="backupJSON();return false">Download a backup now</a> and keep it on a pen drive / Google Drive.</div>`:''}
   ${dupBanner()}
-  <div class="stats">
-    <div class="stat red"><div class="k">Vehicles in stock</div><div class="v">${inStock.length}</div></div>
-    <div class="stat"><div class="k">Sold today</div><div class="v">${todaySales.length}</div></div>
-    <div class="stat"><div class="k">Sold this month</div><div class="v">${monthSales.length}</div></div>
-    <div class="stat"><div class="k">Cash in hand</div><div class="v">${rs(bal.cash)}</div></div>
-    <div class="stat click" style="cursor:pointer" onclick="go('dues')"><div class="k">Customer dues →</div><div class="v">${rs(dues.reduce((a,s)=>a+saleDue(s),0))}</div><div class="sub2">${dues.length} customers</div></div>
-    <div class="stat"><div class="k">Finance pending</div><div class="v">${rs(finPend.reduce((a,s)=>a+num(s.finance),0))}</div></div>
-    ${(t=>t?`<div class="stat"><div class="k">Finance short (total)</div><div class="v" style="color:var(--amber)">${rs(t)}</div></div>`:'')(DB.sales.reduce((a,s)=>a+Math.max(0,-finDiff(s)),0))}
+  <div class="dhero">
+    <div><div style="font-size:14px;opacity:.85">${hi} 🙏 · ${new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+      <div style="font-size:26px;font-weight:800;margin:4px 0 2px">${esc(DB.settings.name)}</div>
+      <div style="opacity:.9">Today <b>${todaySales.length}</b> sold · this month <b>${monthSales.length}</b> sold${prevSameDays||monthSales.length?` <span class="dchip">${monthSales.length>=prevSameDays?'▲':'▼'} ${Math.abs(monthSales.length-prevSameDays)} vs same days last month</span>`:''}</div></div>
+    <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn dbtn" onclick="newSale()">🏍️ New sale</button>
+      <button class="btn dbtn" onclick="go('stock');setTimeout(()=>$('#fStock [name=chassis]')?.focus(),0)">📦 Add stock</button>
+      <button class="btn dbtn" onclick="go('day')">📒 Day Book</button>
+      <button class="btn dbtn" onclick="go('enq')">📞 Enquiry</button>
+    </div>
   </div>
-  <div class="row" style="margin-bottom:16px">
-    <button class="btn" onclick="go('stock');setTimeout(()=>$('#fStock [name=chassis]')?.focus(),0)">+ Add vehicle to stock</button>
-    <button class="btn" onclick="newSale()">+ New sale</button>
-    <button class="btn ghost" onclick="go('day')">+ Day Book entry</button>
-    <button class="btn ghost" onclick="go('enq')">+ New enquiry</button>
+  ${alerts.length?`<div class="card" style="padding:12px 14px"><div style="font-weight:700;margin-bottom:8px">⚡ Needs attention today</div><div class="row" style="gap:8px;flex-wrap:wrap">${alerts.map(([i,l,g,c])=>`<button class="dalert ${c}" onclick="${g}">${i} ${l}</button>`).join('')}</div></div>`:`<div class="card" style="padding:12px 14px;color:var(--green);font-weight:600">✓ Nothing urgent today</div>`}
+  ${todayCard()}
+  <h3 style="margin:18px 2px 10px;font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">This month &amp; overall</h3>
+  <div class="stats dstats">
+    ${kpi('🏍️','Sold this month',`${monthSales.length}`,`${rs(monthSales.reduce((a,s)=>a+num(s.total),0))} · today ${todaySales.length}`,'',"go('sales')")}
+    ${kpi('📈','Margin this month',mk.length?(mT<0?'− ':'')+rs(Math.abs(mT)):'—',mk.length?`${mk.length} of ${monthSales.length} sales · avg ${rs(Math.round(mT/mk.length))}${loss?` · <b style="color:var(--red)">${loss} loss</b>`:''}`:'enter prices / RTO to see',mT<0?'var(--red)':'var(--green)',"go('sales')")}
+    ${kpi('📦','Vehicles in stock',inStock.length,stockVal?`${rs(stockVal)} at cost`:'','var(--red)',"go('stock')")}
+    ${kpi('💵','Cash in hand',rs(bal.cash),`Cash + bank ${rs(bal.total)}`,'',"go('cash')")}
+    ${kpi('🏦','Finance pending',rs(finPendT),`${finPend.length} sales${finOld.length?` · <b style="color:var(--red)">${finOld.length} over 30d</b>`:''}`,'var(--amber)',"finF='Pending';go('fin')")}
+    ${kpi('🧾','Customer dues',rs(duesT),`${dues.length} customers`,'var(--red)',"go('dues')")}
+    ${kpi('🏢','Dealer balance',rs(Math.abs(dBal)),dBal>=0?'to pay dealer':'paid in advance',dBal>0.5?'var(--red)':'var(--green)',"accT='dealer';go('acc')")}
+    ${kpi('📞','Enquiries',openE.length+' open',`${calls.length} calls today · ${enqM.length} new this month${wonM?` · ${wonM} sold`:''}`,'',"go('enq')")}
   </div>
-  ${DB.partners.length?(S=>`<div class="card"><h2>Partners – capital invested <a href="#" style="font-size:13px;font-weight:400" onclick="accT='partners';go('acc');return false">Full details →</a></h2><div class="stats" style="margin:0">${S.P.map(p=>`<div class="stat"><div class="k">${esc(p.name)} (${p.share}%)</div><div class="v">${rs(p.net)}</div><div style="margin-top:4px">${pendPill(p)}</div><div style="margin-top:4px">${holdPill(holdings().find(h=>h.p.id===p.id))}</div></div>`).join('')}</div></div>`)(partnerSummary()):''}
-  <div class="card"><h2>Stock summary (model × colour)</h2>${stockSummary()}</div>
+  <div class="dgrid">
+    <div class="card"><h2 style="margin-top:0">Sales – last 6 months</h2>
+      <div style="display:flex;align-items:flex-end;gap:10px;height:170px;padding-top:10px">${MS.map(x=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%" title="${mLabel(x.k)}: ${x.n} sales · ${rs(x.v)}">
+        <div style="font-weight:700;font-size:13px">${x.n}</div><div style="width:70%;max-width:46px;height:${Math.max(3,x.n/mxN*120)}px;background:${x.k===m?'var(--red)':'#e8a0a0'};border-radius:6px 6px 0 0"></div>
+        <div class="sub2" style="margin-top:4px">${MN[+x.k.slice(5,7)-1]}</div></div>`).join('')}</div></div>
+    <div class="card"><h2 style="margin-top:0">Top models – ${MN[+m.slice(5,7)-1]}</h2>${topM.length?topM.map(([k,n])=>bar(k,n,mxT,'var(--red)')).join(''):'<div class="empty">No sales this month yet.</div>'}</div>
+    <div class="card"><h2 style="margin-top:0">Stock by model <a href="#" style="font-size:13px;font-weight:400" onclick="go('stock');return false">all →</a></h2>${stM.length?stM.map(([k,n])=>bar(k,n,mxS,'#1a56c4')).join(''):'<div class="empty">No stock.</div>'}</div>
+    <div class="card"><h2 style="margin-top:0">Recent sales <a href="#" style="font-size:13px;font-weight:400" onclick="go('sales');return false">all →</a></h2>
+      ${[...DB.sales].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.inv||0)-(a.inv||0)).slice(0,6).map(s=>{const mg=saleMargin(s);return `<div class="row click" style="justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer" onclick="viewSale('${s.id}')"><div><b>${esc(s.name)}</b><div class="sub2">${esc(s.model)} · ${fd(s.date)}</div></div><div style="text-align:right"><b>${rs(s.total)}</b><div class="sub2" style="color:${mg==null?'inherit':mg<0?'var(--red)':'var(--green)'}">${mg==null?'':((mg<0?'− ':'+ ')+rs(Math.abs(mg)))}</div></div></div>`}).join('')||'<div class="empty">No sales yet.</div>'}</div>
+  </div>
   ${callsCard()}
-  <div class="card"><h2>Pending payments</h2>${(dues.length||finPend.length)?salesTable([...new Set([...dues,...finPend])]):'<div class="empty">Nothing pending.</div>'}</div>`;
+  ${DB.partners.length?(S=>`<div class="card"><h2>Partners – capital invested <a href="#" style="font-size:13px;font-weight:400" onclick="accT='partners';go('acc');return false">Full details →</a></h2><div class="stats" style="margin:0">${S.P.map(p=>`<div class="stat"><div class="k">${esc(p.name)} (${p.share}%)</div><div class="v">${rs(p.net)}</div><div style="margin-top:4px">${pendPill(p)}</div><div style="margin-top:4px">${holdPill(holdings().find(h=>h.p.id===p.id))}</div></div>`).join('')}</div></div>`)(partnerSummary()):''}
+  <div class="card"><h2>Stock summary (model × colour)</h2>${stockSummary()}</div>`;
 }
 
 /* ---------- stock ---------- */
@@ -1327,7 +1410,7 @@ function saveCall(id){
   const closes=['booked','elsewhere','noint'].includes(k);
   if(!closes&&!d.next){alert('Choose the date to call again.');return}
   if(!closes&&d.next<today()&&!confirm('The next call date is in the past. Save anyway?')) return;
-  (e.calls=e.calls||[]).push({date:today(),said:k,note:txt(d.note),next:closes?'':d.next});
+  (e.calls=e.calls||[]).push({date:today(),said:k,note:txt(d.note),next:closes?'':d.next,by:cloudEmail||''});
   e.lastSaid=saidL(k)+(txt(d.note)?' – '+txt(d.note):''); e.lastCall=today();
   if(closes){ e.status=k==='booked'?'Sold':'Lost'; delete e.followUp } else e.followUp=d.next;
   save(); dlg.close(); render(); toast(closes?'Saved – enquiry closed':'Saved – next call on '+fd(d.next));
