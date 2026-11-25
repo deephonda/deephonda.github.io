@@ -1221,8 +1221,57 @@ function enqForm(e={}){
     <label class="span2">Notes<input name="notes" value="${esc(e.notes)}"></label>
   </form>${dl('dlModels',DB.settings.models)}`;
 }
+/* ---------- enquiries from a photo (register page, slips, visiting cards, WhatsApp screenshots) ---------- */
+const enqSchema=()=>objSchema({enquiries:{type:'array',items:objSchema({date:S_STR,name:S_STR,phone:S_STR,model:S_STR,exchange:S_STR,follow_up:S_STR,status:{type:'string',enum:['Open','Sold','Lost']},notes:S_STR})}});
+async function aiEnq(files){
+  try{
+    const a=await aiPrep(files,'Reading enquiries…'); if(!a) return;
+    const prompt=`These photos are from an Indian two-wheeler showroom (Honda): an enquiry register page, enquiry slips, visiting cards or WhatsApp screenshots of customers asking about vehicles.
+List EVERY customer enquiry you find in "enquiries", one per customer.
+- name: customer name (keep Hindi if written in Hindi). phone: 10-digit mobile number only.
+- model: the vehicle the customer wants. If it matches one of these names, use that exact name: ${DB.settings.models.join(', ')}.
+- exchange: old vehicle the customer wants to give in exchange, if written (e.g. "Splendor 2016"), else "".
+- date: enquiry date as YYYY-MM-DD (Indian dates are day-month-year); for ditto marks use the date above; "" if not shown.
+- follow_up: next follow-up / call-back date as YYYY-MM-DD if written, else "".
+- status: "Sold" if it says booked / sold / delivered, "Lost" if it says not interested / bought elsewhere, otherwise "Open".
+- notes: anything else useful (budget, finance wanted, colour, village). 
+- If you cannot read a name, number or word, do NOT guess: write "?" in that field. Never invent a value.`;
+    const d=await aiRun(a.key,a.parts,prompt,enqSchema(),'enquiries');
+    if(!d.enquiries?.length) throw new Error('No enquiry found in this photo. Try again with a clear, straight photo.');
+    reviewEnq(d.enquiries);
+  }catch(e){aiFail(e)}
+}
+function ph10(v){return String(v||'').replace(/\D/g,'').slice(-10)}
+function reviewEnq(E){
+  const inp=(n,v,w,x='')=>`<input name="${n}" value="${esc(v)}" style="min-width:${w}px" ${x}>`;
+  const seen=new Set();
+  const rows=E.map((e,i)=>{const ph=ph10(e.phone), ex=ph.length===10&&DB.enquiries.find(x=>ph10(x.phone)===ph), tw=ph.length===10&&seen.has(ph); if(ph.length===10) seen.add(ph);
+    return `<tr><td><input type="checkbox" ${ex||tw?'':'checked'} style="width:auto"> <b>${i+1}</b></td>
+    <td><input type="date" name="date" value="${esc(toISO(e.date)||today())}"></td><td>${inp('name',txt(e.name),130)}</td><td>${inp('phone',txt(e.phone),110,'inputmode="tel"')}</td>
+    <td>${inp('model',txt(e.model),130,'list="dlModels"')}</td><td>${inp('exchange',txt(e.exchange),110)}</td><td><input type="date" name="followUp" value="${esc(toISO(e.follow_up)||'')}"></td>
+    <td><select name="status" style="width:auto">${opts(['Open','Sold','Lost'],e.status||'Open')}</select></td><td>${inp('notes',txt(e.notes),150)}</td>
+    <td>${ex?`<span class="pill due">Already in register</span><div class="sub2">${esc(ex.name)} · ${fd(ex.date)}</div>`:tw?'<span class="pill due">Twice in photo</span>':''}</td></tr>`}).join('');
+  openDlg(`${E.length} enquiries found — check and Save`,`<p class="note" style="margin-top:0">❓ Yellow cells = AI could not read them (“?”) — please fill them in. Enquiries whose mobile is already in the register are unticked.</p>
+  <div class="tablewrap imp"><table id="enT"><tr><th></th><th>Date</th><th>Name</th><th>Mobile</th><th>Model wanted</th><th>Old vehicle</th><th>Follow-up</th><th>Status</th><th>Notes</th><th></th></tr>${rows}</table></div>${dl('dlModels',DB.settings.models)}`,
+  `<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="saveEnqPhoto()">Save enquiries</button>`);
+  markQ('enT','');
+  dlg.style.maxWidth='1300px'; dlg.style.width='96vw'; dlg.addEventListener('close',()=>{dlg.style.maxWidth='';dlg.style.width=''},{once:true});
+}
+function saveEnqPhoto(){
+  const q=qRows('enT'); if(q.length&&!confirm(`❓ Row ${q.join(', ')} still has "?" (AI could not read it).\n\nCorrect it first, or press OK to save as it is.`)) return;
+  const out=[], bad=[];
+  [...document.querySelectorAll('#enT tr')].slice(1).forEach((tr,i)=>{ if(!tr.querySelector('input[type=checkbox]').checked) return;
+    const g=n=>txt(tr.querySelector(`[name=${n}]`).value), r={date:g('date')||today(),name:g('name'),phone:g('phone'),model:g('model'),exchange:g('exchange'),followUp:g('followUp'),status:g('status')||'Open',notes:g('notes')};
+    if(!r.name){bad.push(i+1);return} out.push(r) });
+  if(bad.length){alert(`Row ${bad.join(', ')}: name is empty. Fill it in or untick the row.`);return}
+  if(!out.length){alert('No enquiry selected.');return}
+  const dup=out.filter(r=>ph10(r.phone).length===10&&DB.enquiries.some(x=>ph10(x.phone)===ph10(r.phone)));
+  if(dup.length&&!confirm(`⚠ Possible DOUBLE ENTRY\n\n${dup.map(r=>r.name+' '+r.phone).join('\n')}\nalready in the enquiry register.\n\nSave anyway?`)) return;
+  const t0=Date.now(); out.forEach((r,i)=>DB.enquiries.push({id:uid(),created:t0+i,...r}));
+  save(); dlg.close(); toast(`${out.length} enquiries added`); render();
+}
 function vEnq(){
-  $('#app').innerHTML=`<div class="card"><h2>New enquiry</h2>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
+  $('#app').innerHTML=`<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
   <div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Enquiry register</h2>
   <select style="width:auto" onchange="enqF=this.value;vEnq()">${opts(['Open','Sold','Lost','All'],enqF)}</select><button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button></div>
   ${(r=>r.length?enqTable(r):'<div class="empty">No enquiries.</div>')(DB.enquiries.filter(e=>enqF==='All'||e.status===enqF).sort((a,b)=>(b.date||'').localeCompare(a.date||'')))}</div>`;
@@ -2328,7 +2377,8 @@ function makeReport(){
   const f=$('#frp'), o={from:f.from.value,to:f.to.value}; ['sum','list','fin','stock','stockl','old','enq','money'].forEach(k=>o[k]=f[k].checked);
   if(!o.from||!o.to||o.from>o.to){alert('Choose valid dates.');return}
   const S=DB.settings, inR=d=>d&&d>=o.from&&d<=o.to, sales=DB.sales.filter(x=>inR(x.date)).sort((a,b)=>(a.date||'').localeCompare(b.date||'')||num(a.inv)-num(b.inv));
-  const T=(h,rows,numc=[])=>`<table><tr>${h.map((x,i)=>`<th class="${numc.includes(i)?'num':''}">${x}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${numc.includes(i)?'num':''}">${c}</td>`).join('')}</tr>`).join('')}</table>`;
+  const nwc=c=>/^(\d{2}-\d{2}-\d{4}|₹[\d,]+|\d+)$/.test(String(c).trim()), chc=c=>/^(?=.*[A-Z])[A-Z0-9]{9,}$/.test(String(c).trim());
+  const T=(h,rows,numc=[])=>`<table><tr>${h.map((x,i)=>`<th class="${numc.includes(i)?'num':''}">${x}</th>`).join('')}</tr>${rows.map(r=>`<tr>${r.map((c,i)=>`<td class="${numc.includes(i)?'num':''}${nwc(c)?' nw':''}${chc(c)?' ch':''}">${c}</td>`).join('')}</tr>`).join('')}</table>`;
   const grp=(L,kf)=>{const G={}; L.forEach(x=>{const k=kf(x)||'—'; (G[k]=G[k]||[]).push(x)}); return Object.entries(G).sort((a,b)=>b[1].length-a[1].length)};
   const age=d=>d?Math.max(0,Math.round((new Date(today())-new Date(d))/864e5)):'';
   const inStock=DB.stock.filter(isIn), fin=sales.filter(x=>num(x.finance)>0), M=o.money;
@@ -2356,7 +2406,7 @@ function makeReport(){
 }
 const repStyle=()=>`<style>.rpx{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Devanagari",sans-serif;color:#111;font-size:11px;background:#fff}
 .rpx h2{font-size:13px;color:#b91c1c;margin:12px 0 5px;border-bottom:1px solid #ccc;padding-bottom:3px}
-.rpx table{width:100%;border-collapse:collapse;margin-bottom:6px}.rpx th,.rpx td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top;white-space:normal}
+.rpx table{width:100%;border-collapse:collapse;margin-bottom:6px;table-layout:auto}.rpx th,.rpx td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top;white-space:normal}.rpx .nw,.rpx .ch{white-space:nowrap}.rpx .ch{font-size:10px;letter-spacing:-.1px}
 .rpx th{background:#f1f1f1;font-weight:700}.rpx .num{text-align:right}.rpx tr{page-break-inside:avoid}
 .rpx .kp{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.rpx .kp div{border:1px solid #bbb;border-radius:6px;padding:5px 8px;min-width:100px}.rpx .kp b{display:block;font-size:15px}
 .rpx .rc h3{margin:0;color:#c00;font-size:20px}.rpx .rc .hd{border-bottom:2px solid #c00;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px}
@@ -2364,12 +2414,12 @@ const repStyle=()=>`<style>.rpx{font-family:system-ui,-apple-system,"Segoe UI",R
 function repPrint(){ const r=window.__rep; if(!r) return; $('#print').innerHTML=r.h; dlg.close(); window.print() }
 async function reportPDF(){
   const r=window.__rep; if(!r) return;
-  const el=document.createElement('div'); el.style.cssText='width:700px;background:#fff;padding:0;margin:0'; el.innerHTML=repStyle()+`<div class="rpx">${r.h}</div>`;
+  const el=document.createElement('div'); el.style.cssText='width:1040px;background:#fff;padding:0;margin:0'; el.innerHTML=repStyle()+`<div class="rpx">${r.h}</div>`;
   toast('⏳ Creating PDF…');
   try{await loadPDF()}catch(e){alert('Internet is needed to create the PDF. Check the connection and try again — or use 🖨 Print.');return}
   try{
     const blob=await html2pdf().set({margin:[8,8,10,8],image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,useCORS:true,scrollX:0,scrollY:0},
-      jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],avoid:'tr'}}).from(el).outputPdf('blob');
+      jsPDF:{unit:'mm',format:'a4',orientation:'landscape'},pagebreak:{mode:['css','legacy'],avoid:'tr'}}).from(el).outputPdf('blob');
     if(IOS&&navigator.canShare){try{const f=new File([blob],r.name,{type:'application/pdf'});if(navigator.canShare({files:[f]})){await navigator.share({files:[f]});toast('✓ Report ready – '+r.name);return}}catch(e){if(e&&e.name==='AbortError'){toast('Not saved (cancelled)');return}}}
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=r.name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
     openDlg('✓ Report saved',`<p style="margin-top:0;font-size:16px">The PDF has been saved:</p><p><b>${esc(r.name)}</b></p>
