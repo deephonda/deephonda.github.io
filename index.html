@@ -251,7 +251,7 @@ function render(){
 
 /* ---------- dashboard ---------- */
 let dashDay='';
-const whoName=em=>em?((accUsers().find(u=>u.email===em)||{}).name||em.split('@')[0]):'Office';
+const whoName=em=>em?((accUsers().find(u=>u.email===em)||{}).name||(emList(DB.settings.ruleAdmins||'').includes(String(em).toLowerCase())?'Owner':em.split('@')[0])):'Office';
 function todaySummary(){
   const t=today(), S=DB.sales.filter(s=>s.date===t).sort((a,b)=>(a.inv||0)-(b.inv||0));
   const by=s=>s.fromStaff?whoName((FINQ.find(e=>e.id===s.fromStaff)||{}).by||''):(String(s.notes||'').match(/Entered by (\S+@\S+)/)||[])[1]?whoName(String(s.notes).match(/Entered by (\S+@\S+)/)[1]):'Office';
@@ -1446,7 +1446,7 @@ function callDlg(id,pre){
   const e=DB.enquiries.find(x=>x.id===id); if(!e) return; const C=e.calls||[];
   openDlg('📞 Call – '+(e.no?eNo(e)+' · ':'')+e.name,`<p style="margin-top:0"><b>${esc(e.name)}</b> · <a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}<br>
     <span class="muted">Wants ${esc(e.model||'—')}${e.exchange?' · old vehicle '+esc(e.exchange):''} · enquiry ${fd(e.date)}${e.notes?' · '+esc(e.notes):''}</span></p>
-    ${C.length?`<div class="tablewrap" style="margin-bottom:10px"><table><tr><th>Called on</th><th>What the customer said</th><th>Next call</th></tr>${[...C].reverse().map(c=>`<tr><td>${fd(c.date)}</td><td style="white-space:normal">${esc(saidL(c.said))}${c.note?`<div class="sub2">${esc(c.note)}</div>`:''}</td><td>${c.next?fd(c.next):'—'}</td></tr>`).join('')}</table></div>`:'<p class="note">No calls recorded yet.</p>'}
+    ${C.length?`<div class="tablewrap" style="margin-bottom:10px"><table><tr><th>Called on</th><th>What the customer said</th><th>Next call</th><th></th></tr>${C.map((c,i)=>({...c,i,e})).reverse().map(c=>`<tr><td>${fd(c.date)}${c.t?`<div class="sub2">${c.t}</div>`:''}</td><td style="white-space:normal">${esc(saidL(c.said))}${c.note?`<div class="sub2">${esc(c.note)}</div>`:''}<div class="sub2">by ${esc(whoName(c.by))}</div></td><td>${c.next?fd(c.next):'—'}</td><td style="white-space:nowrap">${callCan(c)?`<button type="button" class="btn plain sm" onclick="callEdit('${id}',${c.i})">✏️</button> <button type="button" class="btn plain sm" style="color:var(--red)" onclick="callDel('${id}',${c.i})">🗑</button>`:''}</td></tr>`).join('')}</table></div>`:'<p class="note">No calls recorded yet.</p>'}
     <form id="fcall" class="grid">
       <label class="span2">What did the customer say?<select name="said" onchange="callSaid(this.value)">${SAID.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></label>
       <label class="span2">Note (what exactly he said)<input name="note" placeholder="e.g. will come on Sunday with father, wants red colour"></label>
@@ -1469,13 +1469,44 @@ function saveCall(id){
   if(!closes&&d.next<today()&&!confirm('The next call date is in the past. Save anyway?')) return;
   (e.calls=e.calls||[]).push({date:today(),t:new Date().toTimeString().slice(0,5),said:k,note:txt(d.note),next:closes?'':d.next,by:cloudEmail||''});
   e.lastSaid=saidL(k)+(txt(d.note)?' – '+txt(d.note):''); e.lastCall=today();
-  if(closes){ e.status=k==='booked'?'Sold':'Lost'; delete e.followUp } else e.followUp=d.next;
+  if(closes){ e.status=k==='booked'?'Sold':'Lost'; e.closedByCall=1; delete e.followUp } else { e.followUp=d.next; delete e.closedByCall }
   save(); dlg.close(); render(); toast(closes?'Saved – enquiry closed':'Saved – next call on '+fd(d.next));
 }
 let talkDay='';
+// owner can change any call; an employee only his own calls of today
+const callCan=c=>!STAFF||(String(c.by||'').toLowerCase()===String(cloudEmail).toLowerCase()&&c.date===today());
+// after a call is changed or removed, the enquiry follows its latest call
+function callRecalc(e){
+  const C=e.calls||[], l=C[C.length-1];
+  if(!l){ delete e.lastSaid; delete e.lastCall; if(e.status!=='Open'&&e.closedByCall){e.status='Open';delete e.closedByCall} return }
+  e.lastSaid=saidL(l.said)+(l.note?' – '+l.note:''); e.lastCall=l.date;
+  if(l.said==='booked'){e.status='Sold';e.closedByCall=1;delete e.followUp}
+  else if(['elsewhere','noint'].includes(l.said)){e.status='Lost';e.closedByCall=1;delete e.followUp}
+  else { if(e.status!=='Open'&&e.closedByCall) e.status='Open'; delete e.closedByCall; if(l.next) e.followUp=l.next }
+}
+function callDel(eid,i){
+  const e=DB.enquiries.find(x=>x.id===eid), c=e&&(e.calls||[])[i]; if(!c) return;
+  if(!confirm(`Delete this call?\n\n${e.name} · ${fd(c.date)}${c.t?' '+c.t:''}\n${saidL(c.said)}${c.note?' – '+c.note:''}`)) return;
+  e.calls.splice(i,1); callRecalc(e); save(); if(dlg.open) dlg.close(); render(); toast('Call deleted');
+}
+function callEdit(eid,i){
+  const e=DB.enquiries.find(x=>x.id===eid), c=e&&(e.calls||[])[i]; if(!c) return;
+  openDlg('✏️ Change call – '+e.name,`<form id="fce" class="grid">
+    <label class="span2">What did the customer say?<select name="said">${SAID.map(([k,l])=>`<option value="${k}" ${k===c.said?'selected':''}>${(SAIDUI[k]||[''])[0]} ${l}</option>`).join('')}</select></label>
+    <label class="span2">Note<input name="note" value="${esc(c.note||'')}"></label>
+    <label>Call again on<input type="date" name="next" value="${esc(c.next||'')}"></label>
+    <label>Called on<input type="date" name="date" value="${esc(c.date)}" max="${today()}" ${STAFF?'disabled':''}></label></form>`,
+  `<button class="btn plain" style="margin-right:auto;color:var(--red)" onclick="callDel('${eid}',${i})">🗑 Delete call</button><button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="callEditSave('${eid}',${i})">Save</button>`);
+}
+function callEditSave(eid,i){
+  const e=DB.enquiries.find(x=>x.id===eid), c=e.calls[i], d=formData($('#fce')), closes=['booked','elsewhere','noint'].includes(d.said);
+  if(!closes&&!d.next){alert('Choose the date to call again.');return}
+  Object.assign(c,{said:d.said,note:txt(d.note),next:closes?'':d.next}); if(!STAFF&&d.date) c.date=d.date;
+  e.calls.sort((a,b)=>(a.date+(a.t||'')).localeCompare(b.date+(b.t||''))); callRecalc(e); save(); dlg.close(); render(); toast('Call changed');
+}
 function talkCard(){
   const D=talkDay||today(), isT=D===today(), C=[];
-  DB.enquiries.forEach(e=>(e.calls||[]).forEach(c=>{if(c.date===D)C.push({...c,e})}));
+  DB.enquiries.forEach(e=>(e.calls||[]).forEach((c,i)=>{if(c.date===D)C.push({...c,e,i})}));
   C.sort((a,b)=>(b.t||'').localeCompare(a.t||''));
   const nm=em=>em?(STAFF&&String(em).toLowerCase()===String(cloudEmail).toLowerCase()?'Me':(typeof whoName==='function'?whoName(em):em.split('@')[0])):'Office';
   const cnt=f=>C.filter(f).length, pos=cnt(c=>['visit','finance','price','family','callback'].includes(c.said)), na=cnt(c=>['noans','off'].includes(c.said)), won=cnt(c=>c.said==='booked'), lost=cnt(c=>['elsewhere','noint'].includes(c.said));
@@ -1494,7 +1525,7 @@ function talkCard(){
     <div><b>${esc(c.e.name)}</b> <span class="muted" style="font-size:12px">${eNo(c.e)}</span><div class="sub2">${esc(c.e.model||'')}${c.e.phone?` · <a href="tel:${esc(String(c.e.phone).replace(/[^\d+]/g,''))}">${esc(c.e.phone)}</a>`:''}</div></div>
     <div>${chip(c.said)}</div>
     <div style="font-size:13.5px">${c.note?`“${esc(c.note)}”`:'<span class="muted">—</span>'}<div class="sub2">${c.next?'Next call '+fd(c.next):c.said==='booked'?'Booked':''}${c.t?` · ${c.t}`:''} · by ${esc(nm(c.by))}</div></div>
-    <div><button class="btn plain sm" onclick="callDlg('${c.e.id}')">Open</button></div></div>`).join('')}</div>`
+    <div style="white-space:nowrap">${callCan(c)?`<button class="btn plain sm" title="Change this call" onclick="callEdit('${c.e.id}',${c.i})">✏️ Edit</button> <button class="btn plain sm" style="color:var(--red)" title="Delete this call" onclick="callDel('${c.e.id}',${c.i})">🗑</button> `:''}<button class="btn plain sm" onclick="callDlg('${c.e.id}')">Open</button></div></div>`).join('')}</div>`
   :`<p class="muted" style="margin:0">${isT?'No customer called yet today. Use 📞 Call / record after each call.':'No calls recorded on this day.'}</p>`}</div>`;
 }
 let callsAll=false;
