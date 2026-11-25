@@ -38,6 +38,7 @@ main{max-width:1440px;margin:0 auto;padding:16px}
 .stat .v{font-size:24px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
 .hwho{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:999px;padding:5px 12px;font-size:13px;margin-right:10px;line-height:1.25;max-width:100%}
 .hwho b{font-weight:700}.hwho .em{opacity:.85;font-size:12px}
+@media(max-width:700px){.talkrow{grid-template-columns:1fr 1fr!important}}
 .dhero{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;background:linear-gradient(120deg,#b30000,#e02424 60%,#f05252);color:#fff;border-radius:14px;padding:20px 22px;margin-bottom:14px;box-shadow:0 6px 18px rgba(180,0,0,.18)}
 .dchip{display:inline-block;background:rgba(255,255,255,.2);border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
 .dbtn{background:#fff!important;color:#b30000!important;border:0!important;font-weight:700}
@@ -1465,19 +1466,45 @@ function saveCall(id){
   const closes=['booked','elsewhere','noint'].includes(k);
   if(!closes&&!d.next){alert('Choose the date to call again.');return}
   if(!closes&&d.next<today()&&!confirm('The next call date is in the past. Save anyway?')) return;
-  (e.calls=e.calls||[]).push({date:today(),said:k,note:txt(d.note),next:closes?'':d.next,by:cloudEmail||''});
+  (e.calls=e.calls||[]).push({date:today(),t:new Date().toTimeString().slice(0,5),said:k,note:txt(d.note),next:closes?'':d.next,by:cloudEmail||''});
   e.lastSaid=saidL(k)+(txt(d.note)?' – '+txt(d.note):''); e.lastCall=today();
   if(closes){ e.status=k==='booked'?'Sold':'Lost'; delete e.followUp } else e.followUp=d.next;
   save(); dlg.close(); render(); toast(closes?'Saved – enquiry closed':'Saved – next call on '+fd(d.next));
 }
+let talkDay='';
+function talkCard(){
+  const D=talkDay||today(), isT=D===today(), C=[];
+  DB.enquiries.forEach(e=>(e.calls||[]).forEach(c=>{if(c.date===D)C.push({...c,e})}));
+  C.sort((a,b)=>(b.t||'').localeCompare(a.t||''));
+  const nm=em=>em?(STAFF&&String(em).toLowerCase()===String(cloudEmail).toLowerCase()?'Me':(typeof whoName==='function'?whoName(em):em.split('@')[0])):'Office';
+  const cnt=f=>C.filter(f).length, pos=cnt(c=>['visit','finance','price','family','callback'].includes(c.said)), na=cnt(c=>['noans','off'].includes(c.said)), won=cnt(c=>c.said==='booked'), lost=cnt(c=>['elsewhere','noint'].includes(c.said));
+  const per={}; C.forEach(c=>{const k=nm(c.by); per[k]=(per[k]||0)+1});
+  const chip=(k)=>{const [ic,bg,fg]=SAIDUI[k]||SAIDUI.other; return `<span style="display:inline-block;background:${bg};color:${fg};border:1px solid ${fg}44;border-radius:999px;padding:3px 10px;font-size:12.5px;font-weight:600;white-space:nowrap">${ic} ${esc(saidL(k))}</span>`};
+  const box=(v,l,c)=>`<div style="flex:1;min-width:92px;background:${c};border-radius:12px;padding:10px 12px"><div style="font-size:24px;font-weight:800;line-height:1.1">${v}</div><div style="font-size:12px;color:#555;font-weight:600">${l}</div></div>`;
+  return `<div class="card" style="border:2px solid #1a56c4"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+    <h2 style="margin:0">🗣️ ${isT?'Talked today':'Talked on '+fd(D)} <span class="muted" style="font-weight:400;font-size:15px">· ${C.length} customer${C.length===1?'':'s'}</span></h2>
+    <div class="row" style="gap:6px"><button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()-1);return d.toISOString().slice(0,10)})(new Date(talkDay||today()));vEnq()">◀</button>
+      <input type="date" value="${D}" max="${today()}" style="width:auto" onchange="talkDay=this.value>=today()?'':this.value;vEnq()">
+      ${isT?'':`<button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()+1);const k=d.toISOString().slice(0,10);return k>=today()?'':k})(new Date(talkDay));vEnq()">▶</button><button class="btn sm" onclick="talkDay='';vEnq()">Today</button>`}</div></div>
+  ${C.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    ${box(C.length,'Calls','#e8f0fe')}${box(pos,'👍 Positive','#e6f4ea')}${box(na,'📵 No answer','#fff4e0')}${won?box(won,'✅ Booked','#e6f4ea'):''}${lost?box(lost,'👎 Lost','#eee'):''}
+    ${Object.keys(per).length>1||!per.Office?`<div style="flex:2;min-width:180px;background:#f6f6f4;border-radius:12px;padding:10px 12px;font-size:13px"><div style="font-size:12px;color:#555;font-weight:600;margin-bottom:3px">WHO CALLED</div>${Object.entries(per).map(([k,n])=>`<b>${esc(k)}</b> ${n}`).join(' · ')}</div>`:''}</div>
+  <div>${C.map(c=>`<div style="display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(150px,1fr) 2fr auto;gap:10px;align-items:center;padding:9px 4px;border-top:1px solid var(--line)" class="talkrow">
+    <div><b>${esc(c.e.name)}</b> <span class="muted" style="font-size:12px">${eNo(c.e)}</span><div class="sub2">${esc(c.e.model||'')}${c.e.phone?` · <a href="tel:${esc(String(c.e.phone).replace(/[^\d+]/g,''))}">${esc(c.e.phone)}</a>`:''}</div></div>
+    <div>${chip(c.said)}</div>
+    <div style="font-size:13.5px">${c.note?`“${esc(c.note)}”`:'<span class="muted">—</span>'}<div class="sub2">${c.next?'Next call '+fd(c.next):c.said==='booked'?'Booked':''}${c.t?` · ${c.t}`:''} · by ${esc(nm(c.by))}</div></div>
+    <div><button class="btn plain sm" onclick="callDlg('${c.e.id}')">Open</button></div></div>`).join('')}</div>`
+  :`<p class="muted" style="margin:0">${isT?'No customer called yet today. Use 📞 Call / record after each call.':'No calls recorded on this day.'}</p>`}</div>`;
+}
+let callsAll=false;
 function callsCard(){
   const L=callsDue(), t=today();
   return `<div class="card" style="border:2px solid ${L.length?'var(--red)':'var(--line)'}"><div class="row" style="margin-bottom:${L.length?10:0}px"><h2 class="grow" style="margin:0">📞 Calls to make today (${L.length})</h2>${L.length?'<span class="note" style="margin:0">Customers whose promised date is today (or already passed)</span>':''}</div>
-  ${L.length?`<div class="tablewrap"><table><tr><th>Call date</th><th>No.</th><th>Name</th><th>Mobile</th><th>Wants</th><th>Last time he said</th><th></th></tr>${L.map(e=>`<tr>
+  ${L.length?`<div class="tablewrap"><table><tr><th>Call date</th><th>No.</th><th>Name</th><th>Mobile</th><th>Wants</th><th>Last time he said</th><th></th></tr>${(callsAll?L:L.slice(0,5)).map(e=>`<tr>
     <td>${e.followUp<t?`<span class="pill due">${fd(e.followUp)} · ${Math.round((new Date(t)-new Date(e.followUp))/864e5)}d late</span>`:'<span class="pill open">Today</span>'}</td>
     <td>${eNo(e)}</td><td><b>${esc(e.name)}</b></td><td><a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬</a>`:''}</td>
     <td>${esc(e.model||'')}</td><td style="white-space:normal;max-width:300px">${saidChip(e)}${e.lastCall?`<div class="sub2">on ${fd(e.lastCall)}</div>`:''}</td>
-    <td><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call / record</button></td></tr>`).join('')}</table></div>`:'<p class="note" style="margin:6px 0 0">✓ No calls due today.</p>'}</div>`;
+    <td><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call / record</button></td></tr>`).join('')}</table></div>${L.length>5?`<div style="text-align:center;margin-top:8px"><button class="btn plain sm" onclick="callsAll=!callsAll;render()">${callsAll?'▲ Show less':`▼ Show all ${L.length}`}</button></div>`:''}`:'<p class="note" style="margin:6px 0 0">✓ No calls due today.</p>'}</div>`;
 }
 const wa=p=>{const n=String(p||'').replace(/\D/g,'');return n.length>=10?`https://wa.me/91${n.slice(-10)}`:''};
 function enqTable(rows){
@@ -1551,7 +1578,7 @@ function saveEnqPhoto(){
 }
 function vEnq(){
   if(enqNos()) save();
-  $('#app').innerHTML=`${callsCard()}<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${STAFF?'':photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
+  $('#app').innerHTML=`${talkCard()}${callsCard()}<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${STAFF?'':photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
   <div class="card"><div class="row" style="margin-bottom:10px"><h2 class="grow" style="margin:0">Enquiry register</h2>
   ${STAFF?'':`<button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button>`}<span id="enqDelBtn"></span></div>
   <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
