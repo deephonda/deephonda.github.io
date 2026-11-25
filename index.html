@@ -2461,11 +2461,19 @@ service cloud.firestore {
         && request.auth.token.email.lower() in [${L(sf)}];
     }
     match /shops/${SHOP}/finentries/{id} {
-      allow read, delete: if request.auth != null
+      allow read: if request.auth != null
         && request.auth.token.email.lower() in [${L(sf)}];
-      allow create, update: if request.auth != null
+      allow create: if request.auth != null
         && request.auth.token.email.lower() in [${L(sf)}]
         && request.resource.data.size() < 60;
+      allow update: if request.auth != null
+        && request.auth.token.email.lower() in [${L(sf)}]
+        && request.resource.data.size() < 60
+        && (resource.data.get('name', '') == ''
+            || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amount','financer','recd','recdAmt','recdDate','by','at']));
+      allow delete: if request.auth != null
+        && request.auth.token.email.lower() in [${L(sf)}]
+        && resource.data.get('name', '') == '';
     }
   }
 }`}
@@ -2764,7 +2772,7 @@ function staffFinSave(ev){
   stWrite(FB.F.setDoc(finRef(id),rec,{merge:true}),'Saved ✓ – sent to office'); staffView();
 }
 function staffHint(){const f=$('#sform'), k=chKey(f.challan.value), e=k&&FINQ.find(x=>x.id==='c_'+k&&x.id!==f.eid.value);
-  $('#shint').innerHTML=e&&e.name?`⚠ Sale challan ${esc(e.challan)} is already entered (${esc(e.name)}). <a href="#" onclick="staffEdit('${e.id}');return false">Open it to change</a> — do not enter it twice.`
+  $('#shint').innerHTML=e&&e.name?`🔒 Sale challan ${esc(e.challan)} is already saved (${esc(e.name)}) and cannot be changed. If something is wrong, tell the office.`
     :e?`Finance for challan ${esc(e.challan)} is already entered — the sale details will be added to it.`:''}
 function staffList(){
   const q=String(staffQ).trim().toLowerCase(), qk=chKey(q);
@@ -2776,17 +2784,17 @@ function staffList(){
       <td><b>${esc(e.challan)}</b></td><td>${esc(e.name||'')}<div class="sub2">${esc(e.financer||'')}</div></td><td>${num(e.amount)?rs(e.amount):'—'}</td>
       <td>${e.recd?`<span class="pill in">${rs(e.recdAmt)}</span> ${fd(e.recdDate)}${Math.abs(num(e.recdAmt)-num(e.amount))>=0.5&&num(e.amount)?`<div class="sub2">${num(e.recdAmt)<num(e.amount)?rs(num(e.amount)-num(e.recdAmt))+' short':rs(num(e.recdAmt)-num(e.amount))+' excess'}</div>`:''}`:num(e.amount)?'<span class="pill due">pending</span>':''}${pend(e)}</td>
       <td><button class="btn plain sm" onclick="staffEdit('${e.id}')">Edit</button></td></tr>`).join('')}</table></div>`
-    :`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Down pay</th><th>Finance</th><th>Old vehicle</th><th>Office</th><th></th></tr>${L.filter(e=>e.name).map(e=>`<tr>
+    :`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Down pay</th><th>Finance</th><th>Old vehicle</th><th>Status</th></tr>${L.filter(e=>e.name).map(e=>`<tr>
       <td><b>${esc(e.challan)}</b><div class="sub2">${fd(e.date)}</div></td><td>${esc(e.name)}<div class="sub2">${esc(e.model||'')}</div></td><td>${rs(e.down)}</td>
-      <td>${rs(e.amount)}<br>${num(e.amount)?(e.recd?`<span class="pill in">Recd ${rs(e.recdAmt)}</span>`:'<span class="pill due">pending</span>'):''}${pend(e)}</td>
+      <td>${num(e.amount)?rs(e.amount):'Cash sale'}<div class="sub2">${esc(e.financer||'')}</div></td>
       <td>${txt(e.exReg)||txt(e.exModel)?`${esc(e.exReg)}<div class="sub2">${esc(e.exModel)} · ${rs(e.exValue)}</div>`:'—'}</td>
-      <td style="white-space:normal">${e.m?esc(e.m):'<span class="muted">waiting</span>'}</td>
-      <td><button class="btn plain sm" onclick="staffEdit('${e.id}')">Edit</button></td></tr>`).join('')}</table></div>`;
+      <td style="white-space:nowrap">${e._p?'<span class="muted">⏳ sending…</span>':'<span class="pill in">✓ Saved</span>'}</td></tr>`).join('')}</table></div>`;
 }
 function staffEdit(id){
   const e=FINQ.find(x=>x.id===id); if(!e) return;
   if(staffTab==='fin'){ const f=$('#fform'); f.challan.value=e.challan; f.challan.readOnly=true; staffFinLoad();
-    $('#shint').innerHTML+=` <a href="#" style="color:var(--red)" onclick="staffDel('${id}');return false">Delete this entry</a>`; scrollTo({top:0,behavior:'smooth'}); return }
+    if(!txt(e.name)) $('#shint').innerHTML+=` <a href="#" style="color:var(--red)" onclick="staffDel('${id}');return false">Delete this entry</a>`; scrollTo({top:0,behavior:'smooth'}); return }
+  if(txt(e.name)){ alert('🔒 This sale is saved and cannot be changed. If something is wrong, tell the office.'); return }
   const f=$('#sform'); f.eid.value=id;
   STF_S.forEach(k=>{if(!f[k]) return; const v=STF_N.includes(k)?(num(e[k])||''):(e[k]??''); if(f[k].tagName==='SELECT'){ if(v!=='') f[k].value=v } else f[k].value=v});
   f.challan.readOnly=true; staffCalc();
@@ -2810,13 +2818,15 @@ function staffSave(ev){
   if(!d.name){alert('Enter the customer name.');return}
   if(d.date>today()){alert('Sale date cannot be in the future.');return}
   const id='c_'+k, ex=FINQ.find(x=>x.id===id);
-  if(ex&&ex.name&&d.eid!==id){ alert(`Sale challan ${ex.challan} is already entered (${ex.name}). It will open now — change it there instead of entering it twice.`); staffEdit(id); return }
+  if(ex&&ex.name){ alert(`🔒 Sale challan ${ex.challan} is already saved (${ex.name}).\n\nA saved sale cannot be changed or entered again. If something is wrong, tell the office.`); return }
   const chs=up(d.chassis), dc=chs&&FINQ.find(x=>x.id!==id&&up(x.chassis)===chs);
   if(dc&&!confirm(`⚠ Possible DOUBLE ENTRY\n\nChassis ${chs} is already entered with sale challan ${dc.challan} (${dc.name}).\n\nSave anyway?`)) return;
   const exr=up(d.exReg), dx=exr&&FINQ.find(x=>x.id!==id&&up(x.exReg)===exr);
   if(dx&&!confirm(`⚠ Possible DOUBLE ENTRY\n\nOld vehicle ${exr} is already entered with sale challan ${dx.challan} (${dx.name}).\n\nSave anyway?`)) return;
   if((exr||d.exModel)&&num(d.exValue)<=0&&!confirm('Old vehicle value is empty. Save anyway?')) return;
-  if(num(d.price)<=0&&!confirm('Vehicle price is empty. Save anyway?')) return;
+  if(num(d.price)<=0){alert('Enter the vehicle price.');return}
+  const tot=num(d.price)+num(d.extra), due=tot-num(d.amount)-num(d.exValue)-num(d.down);
+  if(!confirm(`CONFIRM SALE – after saving it CANNOT be changed\n\nSale challan: ${txt(d.challan).toUpperCase()}   Date: ${fd(d.date)}\nCustomer: ${d.name} ${d.rel||''} ${d.relName||''}  ${d.phone||''}\nVehicle: ${[d.model,d.colour].filter(Boolean).join(' ')}  Chassis ${up(d.chassis)||'—'}  Engine ${up(d.engine)||'—'}\nPrice ${rs(d.price)} + extra ${rs(d.extra)} = ${rs(tot)}\nFinance ${rs(d.amount)} ${d.financer||''}\n${txt(d.exReg)||txt(d.exModel)?`Old bike ${d.exModel||''} ${up(d.exReg)} ${rs(d.exValue)}\n`:''}Paid now ${rs(d.down)} (${d.mode})\nBalance due ${rs(due)}\n\nOK = save and send to office · Cancel = go back and check`)) return;
   const rec={challan:ex?ex.challan:txt(d.challan).toUpperCase(),date:d.date,pchallan:txt(d.pchallan).toUpperCase(),name:txt(d.name),rel:d.rel||'S/o',relName:txt(d.relName),phone:txt(d.phone),address:txt(d.address),
     price:num(d.price),extra:num(d.extra),model:txt(d.model),colour:txt(d.colour),chassis:chs,engine:up(d.engine),key:up(d.key),down:num(d.down),mode:d.mode||'Cash',ref:txt(d.ref),rcvBy:d.rcvBy||'',notes:txt(d.notes),
     amount:num(d.amount),financer:txt(d.financer),exReg:exr,exModel:txt(d.exModel),exValue:num(d.exValue),by:cloudEmail,at:FB.F.serverTimestamp()};
