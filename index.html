@@ -331,6 +331,7 @@ function vDash(){
     finOld.length&&['🏦',`${finOld.length} finance pending over 30 days · ${rs(finOld.reduce((a,s)=>a+num(s.finance),0))}`,"finF='Pending';go('fin')",'amber'],
     dues.length&&['💰',`${dues.length} customers owe ${rs(duesT)}`,"go('dues')",'amber'],
     loss&&['📉',`${loss} sale${loss>1?'s':''} this month in LOSS`,"salesMF='bad';go('sales')",'red'],
+    (DB.oldveh||[]).some(o=>ovDue(o)>0.5)&&['🛵',`${(DB.oldveh||[]).filter(o=>ovDue(o)>0.5).length} old-bike buyers owe ${rs((DB.oldveh||[]).reduce((a,o)=>a+ovDue(o),0))}`,"ovF='due';go('old')",'amber'],
     oldStock.length&&['⏳',`${oldStock.length} vehicles in stock for over 60 days`,"go('stock')",'amber'],
     (CLOUD&&cloudReady?stWait().length:0)&&['🧾',`${stWait().length} staff entries not in Sales`,'finUnmatched()','red'],
   ].filter(Boolean);
@@ -1233,9 +1234,17 @@ const ovDue=o=>o.status==='sold'?Math.max(0,num(o.soldPrice)-ovRecd(o)):0;
 // Every sale with an exchange value has an old-vehicle record; keep it in step with the sale.
 function oldSync(){
   let ch=false; DB.oldveh=DB.oldveh||[];
+  // one sale = one old vehicle: remove double records (made when two devices saved at the same moment)
+  const G={}; DB.oldveh.forEach(o=>{if(o.srcSaleId)(G[o.srcSaleId]=G[o.srcSaleId]||[]).push(o)});
+  for(const L of Object.values(G)) if(L.length>1){
+    const score=o=>(o.status==='sold'?1000:0)+DB.daybook.filter(d=>d.oldId===o.id).length*100+['regNo','chassis','engine','year','colour','note','repair'].filter(k=>txt(o[k])).length*10-((o.created||0)/1e13);
+    L.sort((a,b)=>score(b)-score(a)); const keep=L[0];
+    for(const o of L.slice(1)){ for(const k of ['regNo','chassis','engine','year','colour','note','repair']) if(!txt(keep[k])&&txt(o[k])) keep[k]=o[k];
+      DB.daybook.forEach(d=>{if(d.oldId===o.id) d.oldId=keep.id}); DB.oldveh=DB.oldveh.filter(x=>x!==o); ch=true }
+  }
   for(const s of DB.sales){ if(!(num(s.exchangeValue)>0)) continue;
     let o=DB.oldveh.find(x=>x.srcSaleId===s.id);
-    if(!o){ o={id:uid(),created:Date.now(),srcSaleId:s.id,status:'in',model:s.exchange||'',regNo:''}; DB.oldveh.push(o); ch=true }
+    if(!o){ o={id:'ov_'+s.id,created:Date.now(),srcSaleId:s.id,status:'in',model:s.exchange||'',regNo:''}; DB.oldveh.push(o); ch=true }
     const want={date:s.date,cost:num(s.exchangeValue),fromName:s.name,fromPhone:s.phone,fromAddr:s.address};
     for(const k in want) if(o[k]!==want[k]){o[k]=want[k];ch=true}
     if(!o.model&&s.exchange){o.model=s.exchange;ch=true}
@@ -1251,10 +1260,10 @@ function vOld(){
     <div class="stat red"><div class="k">Old vehicles in hand</div><div class="v">${inS.length}</div><div class="sub2">Cost ${rs(inS.reduce((a,o)=>a+ovCost(o),0))}</div></div>
     <div class="stat"><div class="k">Sold</div><div class="v">${sold.length}</div><div class="sub2">For ${rs(sold.reduce((a,o)=>a+num(o.soldPrice),0))}</div></div>
     <div class="stat"><div class="k">Profit / loss on sold</div><div class="v" style="color:${sold.reduce((a,o)=>a+ovProfit(o),0)<0?'var(--red)':'var(--green)'}">${rs(sold.reduce((a,o)=>a+ovProfit(o),0))}</div></div>
-    <div class="stat"><div class="k">Due from buyers</div><div class="v" style="color:var(--red)">${rs(sold.reduce((a,o)=>a+ovDue(o),0))}</div></div></div>
+    <div class="stat" style="cursor:pointer" onclick="ovF='due';vOld()"><div class="k">Pending from buyers →</div><div class="v" style="color:var(--red)">${rs(sold.reduce((a,o)=>a+ovDue(o),0))}</div><div class="sub2">${sold.filter(o=>ovDue(o)>0.5).length} buyers</div></div></div>
   <div class="card"><div class="row" style="margin-bottom:12px;row-gap:10px"><h2 class="grow" style="margin:0">Old vehicle register</h2>
     <input placeholder="Search number / model / name…" style="max-width:240px" value="${esc(ovQ)}" oninput="ovQ=this.value;oldList()">
-    <select style="width:auto" onchange="ovF=this.value;oldList()">${[['all','All'],['in','In hand'],['sold','Sold']].map(([k,v])=>`<option value="${k}" ${ovF===k?'selected':''}>${v}</option>`).join('')}</select>
+    <select style="width:auto" onchange="ovF=this.value;oldList()">${[['all','All'],['in','In hand'],['sold','Sold'],['due','Sold – money pending']].map(([k,v])=>`<option value="${k}" ${ovF===k?'selected':''}>${v}</option>`).join('')}</select>
     <button class="btn plain sm" onclick="csv('oldveh')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('oldveh')">📄 PDF</button>
     <button class="btn sm" onclick="oldEdit()">+ Old vehicle bought directly</button></div>
     <div id="oldList"></div>
@@ -1263,7 +1272,7 @@ function vOld(){
 }
 function oldList(){
   const q=ovQ.toLowerCase();
-  const r=(DB.oldveh||[]).filter(o=>(ovF==='all'||(ovF==='sold'?o.status==='sold':o.status!=='sold'))&&(!q||[o.regNo,o.model,o.chassis,o.fromName,o.buyer,o.buyerPhone,o.fromPhone].join(' ').toLowerCase().includes(q)))
+  const r=(DB.oldveh||[]).filter(o=>(ovF==='all'||(ovF==='due'?ovDue(o)>0.5:ovF==='sold'?o.status==='sold':o.status!=='sold'))&&(!q||[o.regNo,o.model,o.chassis,o.fromName,o.buyer,o.buyerPhone,o.fromPhone].join(' ').toLowerCase().includes(q)))
     .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   $('#oldList').innerHTML=r.length?`<div class="tablewrap"><table class="nice"><thead><tr><th>Vehicle</th><th>Taken from</th><th>Date in</th><th class="num">Cost</th><th>Status</th><th>Sold to</th><th class="num">Sold for</th><th>Money with</th><th class="num">Profit / loss</th><th></th></tr></thead><tbody>
   ${r.map(o=>{const s=o.srcSaleId&&DB.sales.find(x=>x.id===o.srcSaleId), p=ovProfit(o), due=ovDue(o);
@@ -1273,7 +1282,7 @@ function oldList(){
     <td class="num"><b>${rs(ovCost(o))}</b>${num(o.repair)?`<div class="sub2">incl. repair ${rs(o.repair)}</div>`:''}</td>
     <td>${o.status==='sold'?'<span class="pill sold">Sold</span>':'<span class="pill in">In hand</span>'}</td>
     <td class="wrap">${o.status==='sold'?`${esc(o.buyer)}<div class="sub2">${fd(o.soldDate)}${o.buyerPhone?' · '+esc(o.buyerPhone):''}</div>`:'<span class="muted">—</span>'}</td>
-    <td class="num">${o.status==='sold'?`<b>${rs(o.soldPrice)}</b>${due?`<div><span class="pill due">${rs(due)} due</span></div>`:''}`:'—'}</td>
+    <td class="num">${o.status==='sold'?`<b>${rs(o.soldPrice)}</b><div class="sub2" style="color:var(--green)">recd ${rs(ovRecd(o))}</div>${due>0.5?`<div><span class="pill due" style="background:var(--red-soft);color:var(--red)">${rs(due)} pending</span></div>`:'<div class="sub2" style="color:var(--green)">✓ full paid</div>'}`:'—'}</td>
     <td style="white-space:nowrap">${(L=>L.length?L.map(d=>`<div><span class="pill ${d.by?'open':'in'}">${esc(d.by?pName(d.by):'Business')}</span> <span style="font-size:13px">${rs(d.amount)}</span></div>`).join(''):'<span class="muted">—</span>')(DB.daybook.filter(d=>d.oldId===o.id&&d.type==='in'))}</td>
     <td class="num">${o.status==='sold'?`<b style="color:${p<0?'var(--red)':'var(--green)'}">${p<0?'− ':'+ '}${rs(Math.abs(p))}</b>`:'—'}</td>
     <td><div style="display:flex;flex-wrap:wrap;gap:4px;width:170px">${o.status==='sold'?`<button class="btn plain sm" onclick="oldSell('${o.id}')">Sale details</button>${due?`<button class="btn sm" onclick="oldRecv('${o.id}')">Receive</button>`:''}`:`<button class="btn sm" onclick="oldSell('${o.id}')">Sell</button>`}
@@ -1322,17 +1331,28 @@ function oldSell(id){
   const o=DB.oldveh.find(x=>x.id===id); if(!o) return; const e=ovDay(o,'sale');
   openDlg('Sell old vehicle – '+(o.regNo||o.model),`<p class="muted" style="margin-top:0">${esc(o.model)} · cost ${rs(ovCost(o))}</p><form id="fos" class="grid">
     <label>Sale date<input type="date" name="soldDate" value="${esc(o.soldDate||today())}"></label>
-    <label>Sold for ₹<input name="soldPrice" inputmode="decimal" value="${num(o.soldPrice)||''}" required oninput="const p=num(this.value)-${ovCost(o)};$('#ovp').innerHTML=this.value?(p<0?'<b style=&quot;color:var(--red)&quot;>Loss '+rs(-p)+'</b>':'<b style=&quot;color:var(--green)&quot;>Profit '+rs(p)+'</b>'):''"></label>
+    <label>Sold for ₹<input name="soldPrice" inputmode="decimal" value="${num(o.soldPrice)||''}" required oninput="ovCalc(${ovCost(o)},${ovRecd(o)-(e?num(e.amount):0)})"></label>
     <label>Buyer name<input name="buyer" value="${esc(o.buyer)}" required></label>
     <label>Father / husband name<input name="buyerRel" value="${esc(o.buyerRel)}"></label>
     <label>Buyer mobile<input name="buyerPhone" value="${esc(o.buyerPhone)}" inputmode="tel"></label>
     <label class="span2">Buyer address<input name="buyerAddr" value="${esc(o.buyerAddr)}"></label>
-    <label>Money received now ₹<input name="recd" inputmode="decimal" value="${e?num(e.amount):''}"></label>
+    <label>Money received now ₹ <span class="muted">(rest stays pending)</span><input name="recd" inputmode="decimal" value="${e?num(e.amount):''}" oninput="ovCalc(${ovCost(o)},${ovRecd(o)-(e?num(e.amount):0)})"></label>
     <label>Mode<select name="mode">${opts(['Cash','UPI','Bank','Cheque'],e?.mode||'Cash')}</select></label>
     ${holders().length?recvBy(e?.by||''):''}
-    <label class="span2">Note<input name="soldNote" value="${esc(o.soldNote)}"></label></form><p id="ovp" style="margin:8px 0 0"></p>`,
+    <label class="span2">Note<input name="soldNote" value="${esc(o.soldNote)}"></label></form><div id="ovp" style="margin:10px 0 0"></div>`,
   `${o.status==='sold'?`<button class="btn plain" style="margin-right:auto;color:var(--red)" onclick="oldUnsell('${id}')">Undo sale</button>`:''}<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="oldSellSave('${id}')">Save</button>`);
-  $('#fos [name=soldPrice]').dispatchEvent(new Event('input'));
+  ovCalc(ovCost(o),ovRecd(o)-(e?num(e.amount):0));
+}
+// bought for / sold for / profit / received / pending – live in the sell form
+function ovCalc(cost,other){
+  const f=$('#fos'); if(!f) return; const sp=num(f.soldPrice.value), rc=num(f.recd.value)+other, pend=Math.max(0,sp-rc), p=sp-cost;
+  $('#ovp').innerHTML=`<div class="stats" style="margin:0;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
+    <div class="stat"><div class="k">Bought for</div><div class="v" style="font-size:18px">${rs(cost)}</div></div>
+    <div class="stat"><div class="k">Sold for</div><div class="v" style="font-size:18px">${sp?rs(sp):'—'}</div></div>
+    <div class="stat"><div class="k">${p<0?'Loss':'Profit'}</div><div class="v" style="font-size:18px;color:${p<0?'var(--red)':'var(--green)'}">${sp?rs(Math.abs(p)):'—'}</div></div>
+    <div class="stat"><div class="k">Received</div><div class="v" style="font-size:18px;color:var(--green)">${rs(rc)}</div></div>
+    <div class="stat" style="${pend>0.5?'border-color:var(--red)':''}"><div class="k">Pending</div><div class="v" style="font-size:18px;color:${pend>0.5?'var(--red)':'var(--green)'}">${sp?(pend>0.5?rs(pend):'✓ Nil'):'—'}</div></div></div>
+    ${pend>0.5?'<p class="note" style="margin:6px 0 0">The pending amount can be collected later with the <b>Receive</b> button in the register.</p>':''}`;
 }
 function oldSellSave(id){
   const f=$('#fos'); if(!f.reportValidity()) return; const d=formData(f), o=DB.oldveh.find(x=>x.id===id);
@@ -3381,6 +3401,7 @@ function staffList(){
   // New Sale tab: only today's saved sales (older ones drop off by themselves; search finds any day)
   const savedDay=e=>{const t=e.at&&e.at.seconds?new Date(e.at.seconds*1000):new Date(); t.setMinutes(t.getMinutes()-t.getTimezoneOffset()); return t.toISOString().slice(0,10)};
   if(staffTab!=='fin'&&!q) L=L.filter(e=>e.name&&(e.date||savedDay(e))===today());
+  if(staffTab==='fin') L=L.filter(e=>num(e.amount)>0||e.recd);   // finance tab: only entries that have finance
   if(staffTab==='fin'&&!q) L=L.filter(e=>savedDay(e)===today());
   if(!L.length){$('#slist').innerHTML=`<div class="empty">${!q?(staffTab!=='fin'?'No sale saved today yet.':'No finance entry saved today yet.')+' (Older entries: type the challan or name in Search.)':'No entries found.'}</div>`;return}
   $('#slist').innerHTML=staffTab==='fin'
