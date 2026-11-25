@@ -2322,7 +2322,7 @@ function reportDlg(){
     <label class="span2">Quick<select onchange="const f=$('#frp'),t=today(),d=new Date();if(this.value==='m'){f.from.value=t.slice(0,8)+'01'}else if(this.value==='lm'){d.setDate(1);d.setMonth(d.getMonth()-1);const a=d.toISOString().slice(0,8)+'01';const e=new Date(d.getFullYear(),d.getMonth()+1,0);f.from.value=a;f.to.value=e.getFullYear()+'-'+String(e.getMonth()+1).padStart(2,'0')+'-'+String(e.getDate()).padStart(2,'0');return}else if(this.value==='t'){f.from.value=t}else if(this.value==='y'){f.from.value=(t.slice(5,7)>='04'?t.slice(0,4):String(+t.slice(0,4)-1))+'-04-01'}f.to.value=t"><option value="">— choose —</option><option value="t">Today</option><option value="m">This month</option><option value="lm">Last month</option><option value="y">This financial year</option></select></label>
     <p class="span2" style="margin:6px 0 0"><b>Include</b></p>
     ${[['sum','Sales summary – model-wise',1],['list','Sales list (customer, vehicle, chassis, financer)',1],['fin','Finance – financer-wise, pending',1],['stock','Stock in hand – model & colour-wise',1],['stockl','Stock list with chassis no. & days in stock',1],['old','Exchange (old vehicles)',1],['enq','Enquiries',1],['money','Prices & amounts (turn off for the company)',0]].map(([k,l,on])=>`<label class="span2" style="flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:14px;font-weight:500"><input type="checkbox" name="${k}" ${on?'checked':''} style="width:auto"> ${l}</label>`).join('')}
-  </form>`,`<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="makeReport()">🖨 Print / Save as PDF</button>`);
+  </form>`,`<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="makeReport()">Make report</button>`);
 }
 function makeReport(){
   const f=$('#frp'), o={from:f.from.value,to:f.to.value}; ['sum','list','fin','stock','stockl','old','enq','money'].forEach(k=>o[k]=f[k].checked);
@@ -2347,7 +2347,34 @@ function makeReport(){
   if(o.old){ const L=sales.filter(x=>num(x.exchangeValue)>0||txt(x.exchangeReg)); h+=`<h2>Exchange – old vehicles taken (${L.length})</h2>`+(L.length?T(['Date','Customer','New vehicle','Old vehicle','Old vehicle no',...(M?['Value']:[])],L.map(x=>[fd(x.date),esc(x.name),esc(x.model),esc(x.exchange||''),esc(x.exchangeReg||''),...(M?[rs(x.exchangeValue)]:[])]),M?[5]:[]):'<p>None in this period.</p>') }
   if(o.enq){ const L=DB.enquiries.filter(e=>inR(e.date)); h+=`<h2>Enquiries (${L.length})</h2>`+(L.length?T(['Status','Count'],grp(L,e=>e.status).map(([k,l])=>[esc(k),l.length]),[1])+T(['Model wanted','Enquiries'],grp(L,e=>e.model).map(([k,l])=>[esc(k),l.length]),[1]):'<p>No enquiries in this period.</p>') }
   h+=`<div class="rc"><div class="sign"><div>Prepared by</div><div>For ${esc(S.name)}</div></div></div></div>`;
-  $('#print').innerHTML=h; dlg.close(); setTimeout(()=>window.print(),100);
+  window.__rep={h,name:`Deep-Honda-Report-${fd(o.from)}-to-${fd(o.to)}.pdf`};
+  openDlg('📊 Report ready',`<p style="margin-top:0">${fd(o.from)} to ${fd(o.to)} · ${sales.length} sales · ${inStock.length} in stock</p>
+    <p class="note"><b>⬇ Download PDF</b> saves the report as a PDF file (Mac: in the <b>Downloads</b> folder · iPhone: choose “Save to Files” or WhatsApp).<br><b>🖨 Print</b> sends it to a printer.</p>
+    <div style="max-height:45vh;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff">${repStyle()}<div class="rpx">${h}</div></div>`,
+    `<button class="btn plain" onclick="dlg.close()">Close</button><button class="btn ghost" onclick="repPrint()">🖨 Print</button><button class="btn" onclick="reportPDF()">⬇ Download PDF</button>`);
+  dlg.style.maxWidth='900px'; dlg.addEventListener('close',()=>dlg.style.maxWidth='',{once:true});
+}
+const repStyle=()=>`<style>.rpx{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Devanagari",sans-serif;color:#111;font-size:11px;background:#fff}
+.rpx h2{font-size:13px;color:#b91c1c;margin:12px 0 5px;border-bottom:1px solid #ccc;padding-bottom:3px}
+.rpx table{width:100%;border-collapse:collapse;margin-bottom:6px}.rpx th,.rpx td{border:1px solid #999;padding:3px 5px;text-align:left;vertical-align:top;white-space:normal}
+.rpx th{background:#f1f1f1;font-weight:700}.rpx .num{text-align:right}.rpx tr{page-break-inside:avoid}
+.rpx .kp{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.rpx .kp div{border:1px solid #bbb;border-radius:6px;padding:5px 8px;min-width:100px}.rpx .kp b{display:block;font-size:15px}
+.rpx .rc h3{margin:0;color:#c00;font-size:20px}.rpx .rc .hd{border-bottom:2px solid #c00;padding-bottom:6px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px}
+.rpx .rc .sign{display:flex;justify-content:space-between;margin-top:50px}</style>`;
+function repPrint(){ const r=window.__rep; if(!r) return; $('#print').innerHTML=r.h; dlg.close(); window.print() }
+async function reportPDF(){
+  const r=window.__rep; if(!r) return;
+  const el=document.createElement('div'); el.style.cssText='width:700px;background:#fff;padding:0;margin:0'; el.innerHTML=repStyle()+`<div class="rpx">${r.h}</div>`;
+  toast('⏳ Creating PDF…');
+  try{await loadPDF()}catch(e){alert('Internet is needed to create the PDF. Check the connection and try again — or use 🖨 Print.');return}
+  try{
+    const blob=await html2pdf().set({margin:[8,8,10,8],image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,useCORS:true,scrollX:0,scrollY:0},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],avoid:'tr'}}).from(el).outputPdf('blob');
+    if(IOS&&navigator.canShare){try{const f=new File([blob],r.name,{type:'application/pdf'});if(navigator.canShare({files:[f]})){await navigator.share({files:[f]});toast('✓ Report ready – '+r.name);return}}catch(e){if(e&&e.name==='AbortError'){toast('Not saved (cancelled)');return}}}
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=r.name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
+    openDlg('✓ Report saved',`<p style="margin-top:0;font-size:16px">The PDF has been saved:</p><p><b>${esc(r.name)}</b></p>
+      <p class="note">Mac: open <b>Finder → Downloads</b> (or the ⬇ button at the top-right of Safari).<br>Windows / Android: in the <b>Downloads</b> folder.</p>`,'<button class="btn" onclick="dlg.close()">OK</button>');
+  }catch(e){alert('Could not create PDF: '+(e&&e.message||e))}
 }
 
 /* ---------- cloud sync (Firebase) ---------- */
