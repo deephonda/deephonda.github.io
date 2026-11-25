@@ -259,7 +259,7 @@ function vDash(){
   </div>
   ${DB.partners.length?(S=>`<div class="card"><h2>Partners – capital invested <a href="#" style="font-size:13px;font-weight:400" onclick="accT='partners';go('acc');return false">Full details →</a></h2><div class="stats" style="margin:0">${S.P.map(p=>`<div class="stat"><div class="k">${esc(p.name)} (${p.share}%)</div><div class="v">${rs(p.net)}</div><div style="margin-top:4px">${pendPill(p)}</div><div style="margin-top:4px">${holdPill(holdings().find(h=>h.p.id===p.id))}</div></div>`).join('')}</div></div>`)(partnerSummary()):''}
   <div class="card"><h2>Stock summary (model × colour)</h2>${stockSummary()}</div>
-  <div class="card"><h2>Follow-ups due (${fups.length})</h2>${fups.length?enqTable(fups):'<div class="empty">No follow-ups due today.</div>'}</div>
+  ${callsCard()}
   <div class="card"><h2>Pending payments</h2>${(dues.length||finPend.length)?salesTable([...new Set([...dues,...finPend])]):'<div class="empty">Nothing pending.</div>'}</div>`;
 }
 
@@ -1201,13 +1201,58 @@ function oldVoucher(id){
 
 /* ---------- enquiries ---------- */
 let enqF='Open';
+// What the customer said on the phone – one choice from this list (+ a note), and when to call again.
+const SAID=[['visit','Will visit the showroom',3],['later','Will buy later',15],['callback','Asked to call back',2],['finance','Waiting for finance / loan',7],['price','Wants a better price',3],
+  ['family','Will discuss with family',5],['noans','Did not pick up',1],['off','Switched off / wrong number',2],['booked','Booked / bought from us',0],['elsewhere','Bought elsewhere',0],['noint','Not interested',0],['other','Other',3]];
+const saidL=k=>(SAID.find(x=>x[0]===k)||[,k||''])[1];
+const callsDue=()=>DB.enquiries.filter(e=>e.status==='Open'&&e.followUp&&e.followUp<=today()).sort((a,b)=>(a.followUp||'').localeCompare(b.followUp||''));
+const addDays=n=>{const d=new Date(today());d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)};
+function callDlg(id){
+  const e=DB.enquiries.find(x=>x.id===id); if(!e) return; const C=e.calls||[];
+  openDlg('📞 Call – '+e.name,`<p style="margin-top:0"><b>${esc(e.name)}</b> · <a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`:''}<br>
+    <span class="muted">Wants ${esc(e.model||'—')}${e.exchange?' · old vehicle '+esc(e.exchange):''} · enquiry ${fd(e.date)}${e.notes?' · '+esc(e.notes):''}</span></p>
+    ${C.length?`<div class="tablewrap" style="margin-bottom:10px"><table><tr><th>Called on</th><th>What the customer said</th><th>Next call</th></tr>${[...C].reverse().map(c=>`<tr><td>${fd(c.date)}</td><td style="white-space:normal">${esc(saidL(c.said))}${c.note?`<div class="sub2">${esc(c.note)}</div>`:''}</td><td>${c.next?fd(c.next):'—'}</td></tr>`).join('')}</table></div>`:'<p class="note">No calls recorded yet.</p>'}
+    <form id="fcall" class="grid">
+      <label class="span2">What did the customer say?<select name="said" onchange="callSaid(this.value)">${SAID.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></label>
+      <label class="span2">Note (what exactly he said)<input name="note" placeholder="e.g. will come on Sunday with father, wants red colour"></label>
+      <label>Call again on (date he promised)<input type="date" name="next" value="${addDays(3)}"></label>
+      <div class="row" style="align-self:end;gap:6px">${[[1,'Tomorrow'],[3,'+3 days'],[7,'+1 week'],[30,'+1 month']].map(([n,l])=>`<button type="button" class="btn plain sm" onclick="$('#fcall').next.value=addDays(${n})">${l}</button>`).join('')}</div>
+      <p id="callSt" class="note span2" style="margin:0"></p>
+    </form>`,
+  `<button class="btn plain" onclick="dlg.close()">Cancel</button>${e.status==='Open'?`<button class="btn ghost" onclick="dlg.close();newSale(null,'${id}')">Convert to sale</button>`:''}<button class="btn" onclick="saveCall('${id}')">Save call</button>`);
+  callSaid('visit');
+}
+function callSaid(k){const f=$('#fcall'); if(!f) return; const x=SAID.find(s=>s[0]===k)||[];
+  const closes=['booked','elsewhere','noint'].includes(k);
+  f.next.disabled=closes; if(!closes&&x[2]) f.next.value=addDays(x[2]);
+  $('#callSt').innerHTML=k==='booked'?'Status will become <b>Sold</b>. (Use “Convert to sale” to make the sale.)':closes?'Status will become <b>Lost</b> – no more calls.':''}
+function saveCall(id){
+  const e=DB.enquiries.find(x=>x.id===id), d=formData($('#fcall')), k=d.said;
+  const closes=['booked','elsewhere','noint'].includes(k);
+  if(!closes&&!d.next){alert('Choose the date to call again.');return}
+  if(!closes&&d.next<today()&&!confirm('The next call date is in the past. Save anyway?')) return;
+  (e.calls=e.calls||[]).push({date:today(),said:k,note:txt(d.note),next:closes?'':d.next});
+  e.lastSaid=saidL(k)+(txt(d.note)?' – '+txt(d.note):''); e.lastCall=today();
+  if(closes){ e.status=k==='booked'?'Sold':'Lost'; delete e.followUp } else e.followUp=d.next;
+  save(); dlg.close(); render(); toast(closes?'Saved – enquiry closed':'Saved – next call on '+fd(d.next));
+}
+function callsCard(){
+  const L=callsDue(), t=today();
+  return `<div class="card" style="border:2px solid ${L.length?'var(--red)':'var(--line)'}"><div class="row" style="margin-bottom:${L.length?10:0}px"><h2 class="grow" style="margin:0">📞 Calls to make today (${L.length})</h2>${L.length?'<span class="note" style="margin:0">Customers whose promised date is today (or already passed)</span>':''}</div>
+  ${L.length?`<div class="tablewrap"><table><tr><th>Call date</th><th>Name</th><th>Mobile</th><th>Wants</th><th>Last time he said</th><th></th></tr>${L.map(e=>`<tr>
+    <td>${e.followUp<t?`<span class="pill due">${fd(e.followUp)} · ${Math.round((new Date(t)-new Date(e.followUp))/864e5)}d late</span>`:'<span class="pill open">Today</span>'}</td>
+    <td><b>${esc(e.name)}</b></td><td><a href="tel:${esc(String(e.phone||'').replace(/[^\d+]/g,''))}">${esc(e.phone||'')}</a> ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener">💬</a>`:''}</td>
+    <td>${esc(e.model||'')}</td><td style="white-space:normal;max-width:280px">${esc(e.lastSaid||e.notes||'—')}${e.lastCall?`<div class="sub2">on ${fd(e.lastCall)}</div>`:''}</td>
+    <td><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call / record</button></td></tr>`).join('')}</table></div>`:'<p class="note" style="margin:6px 0 0">✓ No calls due today.</p>'}</div>`;
+}
 const wa=p=>{const n=String(p||'').replace(/\D/g,'');return n.length>=10?`https://wa.me/91${n.slice(-10)}`:''};
 function enqTable(rows){
-  return `<div class="tablewrap"><table><tr><th>Date</th><th>Name</th><th>Mobile</th><th>Model wanted</th><th>Old vehicle</th><th>Follow-up</th><th>Status</th><th>Notes</th><th></th></tr>
+  return `<div class="tablewrap"><table><tr><th>Date</th><th>Name</th><th>Mobile</th><th>Model wanted</th><th>Old vehicle</th><th>Next call</th><th>Status</th><th>Last time he said</th><th>Notes</th><th></th></tr>
   ${rows.map(e=>`<tr><td>${fd(e.date)}</td><td><b>${esc(e.name)}</b></td><td>${esc(e.phone)} ${wa(e.phone)?`<a href="${wa(e.phone)}" target="_blank" rel="noopener" title="WhatsApp">💬</a>`:''}</td><td>${esc(e.model)}</td><td>${esc(e.exchange)}</td>
   <td>${e.followUp?(e.status==='Open'&&e.followUp<=today()?`<span class="pill due">${fd(e.followUp)}</span>`:fd(e.followUp)):''}</td>
-  <td><span class="pill ${e.status==='Open'?'open':e.status==='Sold'?'in':'lost'}">${esc(e.status)}</span></td><td style="white-space:normal;min-width:140px">${esc(e.notes)}</td>
-  <td>${e.status==='Open'?`<button class="btn sm" onclick="newSale(null,'${e.id}')">Convert to sale</button> `:''}<button class="btn plain sm" onclick="editEnq('${e.id}')">Edit</button></td></tr>`).join('')}</table></div>`;
+  <td><span class="pill ${e.status==='Open'?'open':e.status==='Sold'?'in':'lost'}">${esc(e.status)}</span></td>
+  <td style="white-space:normal;min-width:160px">${esc(e.lastSaid||'')}${e.lastCall?`<div class="sub2">${fd(e.lastCall)} · ${(e.calls||[]).length} call${(e.calls||[]).length===1?'':'s'}</div>`:''}</td><td style="white-space:normal;min-width:120px">${esc(e.notes)}</td>
+  <td style="white-space:nowrap"><button class="btn sm" onclick="callDlg('${e.id}')">📞 Call</button> ${e.status==='Open'?`<button class="btn ghost sm" onclick="newSale(null,'${e.id}')">Convert to sale</button> `:''}<button class="btn plain sm" onclick="editEnq('${e.id}')">Edit</button></td></tr>`).join('')}</table></div>`;
 }
 function enqForm(e={}){
   return `<form id="fen" class="grid">
@@ -1216,7 +1261,7 @@ function enqForm(e={}){
     <label>Mobile<input name="phone" inputmode="tel" value="${esc(e.phone)}"></label>
     <label>Model wanted<input name="model" list="dlModels" value="${esc(e.model)}"></label>
     <label>Old vehicle (exchange)<input name="exchange" value="${esc(e.exchange)}"></label>
-    <label>Next follow-up<input type="date" name="followUp" value="${esc(e.followUp)}"></label>
+    <label>Next call on<input type="date" name="followUp" value="${esc(e.followUp)}"></label>
     <label>Status<select name="status">${opts(['Open','Sold','Lost'],e.status||'Open')}</select></label>
     <label class="span2">Notes<input name="notes" value="${esc(e.notes)}"></label>
   </form>${dl('dlModels',DB.settings.models)}`;
@@ -1271,7 +1316,7 @@ function saveEnqPhoto(){
   save(); dlg.close(); toast(`${out.length} enquiries added`); render();
 }
 function vEnq(){
-  $('#app').innerHTML=`<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
+  $('#app').innerHTML=`${callsCard()}<div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">New enquiry</h2>${photoBtn('aiEnq','Enquiries from photo (many at once)')}</div>${enqForm()}<div style="margin-top:10px"><button class="btn" onclick="saveEnq()">Save enquiry</button></div></div>
   <div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Enquiry register</h2>
   <select style="width:auto" onchange="enqF=this.value;vEnq()">${opts(['Open','Sold','Lost','All'],enqF)}</select><button class="btn plain sm" onclick="csv('enquiries')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('enquiries')">📄 PDF</button></div>
   ${(r=>r.length?enqTable(r):'<div class="empty">No enquiries.</div>')(DB.enquiries.filter(e=>enqF==='All'||e.status===enqF).sort((a,b)=>(b.date||'').localeCompare(a.date||'')))}</div>`;
@@ -1359,7 +1404,7 @@ function csv(which){
       ()=>DB.sales.map(r=>({...r,purchaseChallan:(DB.stock.find(x=>x.id===r.stockId)||{}).challan||'',received:saleReceived(r),due:Math.round(saleDue(r)),financeRecdAmt:r.financeReceived?finRecd(r):'',financeShortExcess:r.financeReceived?Math.round(finDiff(r)):'',moneyWith:mwText(r)}))],
     daybook:[['date','type','head','particulars','amount','mode','paidBy','partner','paidTo','paymentType','forMonth','vendor','bill','ref','challans','notInCash'],
       ()=>dayRows().map(r=>({...r,head:headOf(r),type:r.type==='in'?'Receipt':'Payment',paidBy:r.saleId?'':PB(r),partner:r.pid?pName(r.pid):'',paidTo:r.payee?epName(r.payee):'',paymentType:r.ptype||'',forMonth:mLabel(r.forMonth),notInCash:r.by||r.old?'Yes':''}))],
-    enquiries:[['date','name','phone','model','exchange','followUp','status','notes'],()=>DB.enquiries],
+    enquiries:[['date','name','phone','model','exchange','followUp','status','lastSaid','lastCall','notes'],()=>DB.enquiries],
     dealer:[['date','amount','mode','paidBy','ref','challans','particulars'],()=>oldest(dpRows()).map(r=>({...r,paidBy:PB(r)}))],
     rent:[['date','paidTo','type','forMonth','amount','mode','paidBy','ref','particulars'],()=>oldest(epRows()).map(r=>({...r,paidTo:epName(r.payee),type:r.head===H.rent?'Rent':r.ptype||'Salary',forMonth:mLabel(r.forMonth),paidBy:PB(r)}))],
     exp:[['date','head','particulars','amount','vendor','bill','mode','paidBy'],()=>oldest(exRows()).map(r=>({...r,paidBy:PB(r)}))],
