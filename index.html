@@ -243,7 +243,7 @@ function vDash(){
   const lb=DB.settings.lastBackup;
   const daysSince=lb?Math.floor((Date.now()-new Date(lb))/864e5):null;
   $('#app').innerHTML=`
-  ${!storageOK?'<div class="warn">⚠ Saving in this browser failed. Use “Backup now” immediately.</div>':''}
+  ${!storageOK?'<div class="warn">⚠ Saving in this browser failed. Use “Backup now” immediately.</div>':''}${finBanner()}
   ${CLOUD?((daysSince===null||daysSince>=30)&&localHas()?`<div class="warn">Your data is safe in the cloud. Still, once a month <a href="#" onclick="backupJSON();return false">take a backup</a>.</div>`:''):(daysSince===null||daysSince>=3)&&(DB.stock.length+DB.sales.length+DB.daybook.length)>0?`<div class="warn">Your data is saved only in this browser. Last backup: <b>${lb?fd(lb.slice(0,10))+' ('+daysSince+' days ago)':'never'}</b>. <a href="#" onclick="backupJSON();return false">Download a backup now</a> and keep it on a pen drive / Google Drive.</div>`:''}
   ${dupBanner()}
   <div class="stats">
@@ -2862,7 +2862,7 @@ const chKey=v=>txt(v).toUpperCase().replace(/[^A-Z0-9]/g,'');
 const finRef=id=>FB.F.doc(FB.db,'shops',SHOP,'finentries',id);
 const STF_S=['challan','date','name','rel','relName','phone','address','price','pchallan','model','colour','chassis','engine','key','extra','amount','financer','exModel','exReg','exValue','down','mode','ref','rcvBy','notes'], STF_N=['price','extra','amount','exValue','down'];
 const STF=['colour','engine','key','rel','relName','address','price','extra','mode','ref','rcvBy','notes','challan','date','pchallan','name','phone','model','chassis','down','amount','financer','recd','recdAmt','recdDate','exReg','exModel','exValue'];
-const stSales=e=>{const k=chKey(e.challan);return k?DB.sales.filter(x=>chKey(x.schallan)===k):[]};
+const stSales=e=>{const ln=(DB.settings.finLinks||{})[e.id]; if(ln){const s=DB.sales.find(x=>x.id===ln); if(s) return [s]} const k=chKey(e.challan);return k?DB.sales.filter(x=>chKey(x.schallan)===k):[]};
 // Admin side: copy each staff entry into the sale with the same Sale Challan No.
 function finApply(){
   if(!CLOUD||!cloudReady||STAFF||!FINQ.length) return false; let ch=false;
@@ -2929,7 +2929,7 @@ function staffEntries(){
   <div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Finance</th><th>Received</th><th>In Sales?</th><th>By</th><th></th></tr>${L.map(e=>{const ss=stSales(e);return `<tr>
     <td><b>${esc(e.challan)}</b><div class="sub2">${fd(e.date||'')}</div></td><td>${esc(e.name||'— (finance only)')}<div class="sub2">${esc(e.model||'')}</div></td>
     <td>${num(e.amount)?rs(e.amount):'—'}<div class="sub2">${esc(e.financer||'')}</div></td><td>${e.recd?rs(e.recdAmt)+' · '+fd(e.recdDate):'—'}</td>
-    <td>${ss.length===1?`<a href="#" onclick="viewSale('${ss[0].id}');return false">✓ ${esc(ss[0].name)}</a>`:ss.length>1?'<span class="pill due">2 sales</span>':'<span class="pill due">not yet</span>'}</td>
+    <td>${ss.length===1?`<a href="#" onclick="viewSale('${ss[0].id}');return false">✓ ${esc(ss[0].name)}</a>`:ss.length>1?'<span class="pill due">2 sales</span>':`<a href="#" onclick="finUnmatched();return false"><span class="pill due">not matched – link</span></a>`}</td>
     <td class="sub2">${esc((e.by||'').split('@')[0])}</td>
     <td><button class="btn plain sm" style="color:var(--red)" onclick="staffEntryDelete('${e.id}')">Delete</button></td></tr>`}).join('')}</table></div>`:'<div class="empty">No staff entries.</div>',
   '<button class="btn" onclick="dlg.close();render()">Close</button>');
@@ -2953,8 +2953,8 @@ function staffAutoSale(e){
 }
 const stWait=()=>FINQ.filter(e=>chKey(e.challan)&&stSales(e).length!==1);
 function finBanner(){
-  const n=stWait().length;
-  return n?`<div class="warn" style="cursor:pointer" onclick="finUnmatched()">🧾 <b>${n} ${n>1?'entries':'entry'} from staff</b> could not be added automatically (vehicle not found in stock, price missing, or only finance). <u>Click to check and add</u></div>`:''}
+  const n=CLOUD&&cloudReady?stWait().length:0;
+  return n?`<div class="warn" style="cursor:pointer" onclick="finUnmatched()">🧾 <b>${n} ${n>1?'entries':'entry'} from staff</b> are not in Sales yet (challan no. does not match any sale, vehicle not in stock, or price missing). <u>Click to link / add</u></div>`:''}
 function finUnmatched(){
   const L=stWait();
   if(!L.length){dlg.close();toast('All staff entries are in the app ✓');return}
@@ -2964,9 +2964,23 @@ function finUnmatched(){
     <span class="muted">${[e.model&&'Model '+e.model,e.chassis&&'Chassis '+e.chassis,e.pchallan&&'Purch. challan '+e.pchallan].filter(Boolean).map(esc).join(' · ')}</span><br>
     Down payment ${rs(e.down)} · Finance ${rs(e.amount)} ${esc(e.financer||'')} · ${e.recd?`Finance recd ${rs(e.recdAmt)} on ${fd(e.recdDate)}`:'Finance pending'}
     ${txt(e.exReg)||txt(e.exModel)?`<br>Old vehicle: ${esc(e.exModel)} ${esc(e.exReg)} · ${rs(e.exValue)}`:''}
-    <div class="sub2">by ${esc(e.by||'')}${txt(e.name)?(num(e.price)<=0?' · <b style="color:var(--amber)">price not entered</b>':!staffVehicle(e)?' · <b style="color:var(--amber)">vehicle not found in stock – choose it</b>':''):' · finance only – no office sale has this challan'}</div>
-    ${stSales(e).length>1?'<p class="warn" style="margin:6px 0 0">Two sales already have this challan no. — fix the sale challan in Sales.</p>':`<button class="btn sm" style="margin-top:6px" onclick="staffToSale('${e.id}')">Create sale</button>`} <button class="btn plain sm" style="margin-top:6px;color:var(--red)" onclick="staffEntryDelete('${e.id}');finUnmatched()">Delete</button></div>`).join('')}`,
+    <div class="sub2">by ${esc(e.by||'')}${txt(e.name)?(num(e.price)<=0?' · <b style="color:var(--amber)">price not entered</b>':!staffVehicle(e)?' · <b style="color:var(--amber)">vehicle not found in stock – choose it</b>':''):` · finance only – <b style="color:var(--amber)">no office sale has challan ${esc(e.challan)}</b>. Choose the right sale below.`}</div>
+    ${stSales(e).length>1?'<p class="warn" style="margin:6px 0 0">Two sales already have this challan no. — fix the sale challan in Sales.</p>':!txt(e.name)?finLinkBox(e):`<button class="btn sm" style="margin-top:6px" onclick="staffToSale('${e.id}')">Create sale</button>`} <button class="btn plain sm" style="margin-top:6px;color:var(--red)" onclick="staffEntryDelete('${e.id}');finUnmatched()">Delete</button></div>`).join('')}`,
   '<button class="btn" onclick="dlg.close()">Close</button>');
+}
+// A finance entry whose challan no. matches no sale: the owner picks the right sale once.
+function finLinkBox(e){
+  const L=[...DB.sales].sort((a,b)=>(!!a.financeReceived-!!b.financeReceived)||(num(b.finance)>0)-(num(a.finance)>0)||(b.date||'').localeCompare(a.date||''));
+  const amt=num(e.amount), best=L.filter(s=>!s.financeReceived&&amt&&Math.abs(num(s.finance)-amt)<1);
+  return `<div class="row" style="margin-top:8px;gap:6px;align-items:flex-end;flex-wrap:wrap"><label style="margin:0;flex:1;min-width:260px">Which sale is this? <span class="muted">(${best.length?'★ = same finance amount':'choose the customer'})</span>
+    <select id="lk_${e.id}"><option value="">— choose sale —</option>${[...best,...L.filter(s=>!best.includes(s))].map(s=>`<option value="${s.id}">${best.includes(s)?'★ ':''}#${s.inv}${s.schallan?' · challan '+esc(s.schallan):''} · ${esc(s.name)} · ${esc(s.model)} · finance ${rs(s.finance)}${s.financeReceived?' (recd)':''}</option>`).join('')}</select></label>
+    <button class="btn sm" onclick="finLink('${e.id}')">Link to this sale</button></div>`;
+}
+function finLink(id){
+  const sid=$('#lk_'+id).value; if(!sid){alert('Choose the sale first.');return}
+  const e=FINQ.find(x=>x.id===id), s=DB.sales.find(x=>x.id===sid);
+  if(!confirm(`Link staff entry (challan ${e.challan}) to sale #${s.inv} ${s.name}?\n\nFinance ${rs(e.amount)}${e.recd?`, received ${rs(e.recdAmt)} on ${fd(e.recdDate)}`:''} will be put in this sale.`)) return;
+  (DB.settings.finLinks||(DB.settings.finLinks={}))[id]=sid; finApply(); save(); toast('✓ Linked – finance added to sale #'+s.inv); finUnmatched();
 }
 function staffToSale(id){
   const e=FINQ.find(x=>x.id===id); if(!e) return;
@@ -3157,6 +3171,7 @@ function staffFinSave(ev){
   if(!recd&&d.recdDate){alert('Enter the finance amount received (or clear the date).');return}
   if(recd&&d.recdDate>today()){alert('Date received cannot be in the future.');return}
   const id='c_'+k, ex=FINQ.find(x=>x.id===id), o=stSaleF(k);
+  if(!o&&!ex&&STOCKF.length&&!confirm(`⚠ Sale challan ${txt(d.challan)} is NOT in the office sales list.\n\nUse the SALE CHALLAN no. shown in “Finance pending” (e.g. ${STOCKF.filter(x=>!x[6]).slice(-3).map(x=>x[0]).join(', ')}), not the bank / DMS number.\n\nSave anyway? (The office will have to link it by hand.)`)) return;
   const rec={amount:o&&num(o[4])>0?num(o[4]):amt,recd,recdAmt:recd?ra:0,recdDate:recd?d.recdDate:'',by:cloudEmail,at:FB.F.serverTimestamp()};
   if(!ex) rec.challan=txt(d.challan).toUpperCase();
   if(o&&num(o[4])>0) rec.financer=txt(o[5]); else if(d.financer) rec.financer=txt(d.financer);
@@ -3175,7 +3190,7 @@ function staffList(){
   if(!L.length){$('#slist').innerHTML=`<div class="empty">${staffTab!=='fin'&&!q?'No sale saved today yet. (Older sales: type the challan or name in Search.)':'No entries yet.'}</div>`;return}
   $('#slist').innerHTML=staffTab==='fin'
     ?`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Financed</th><th>Received</th><th></th></tr>${L.map(e=>`<tr>
-      <td><b>${esc(e.challan)}</b></td><td>${esc(e.name||'')}<div class="sub2">${esc(e.financer||'')}</div></td><td>${num(e.amount)?rs(e.amount):'—'}</td>
+      <td><b>${esc(e.challan)}</b></td><td>${esc(e.name||(stSaleF(chKey(e.challan))||[])[1]||'')}<div class="sub2">${esc(e.financer||'')}</div>${e.m?`<div class="sub2" style="color:var(--green,#15803d)">${esc(e.m)}</div>`:!stSaleF(chKey(e.challan))?'<div class="sub2" style="color:var(--red)">⚠ Challan not in office sales – office will link it</div>':''}</td><td>${num(e.amount)?rs(e.amount):'—'}</td>
       <td>${e.recd?`<span class="pill in">${rs(e.recdAmt)}</span> ${fd(e.recdDate)}${Math.abs(num(e.recdAmt)-num(e.amount))>=0.5&&num(e.amount)?`<div class="sub2">${num(e.recdAmt)<num(e.amount)?rs(num(e.amount)-num(e.recdAmt))+' short':rs(num(e.recdAmt)-num(e.amount))+' excess'}</div>`:''}`:num(e.amount)?'<span class="pill due">pending</span>':''}${pend(e)}</td>
       <td><button class="btn plain sm" onclick="staffEdit('${e.id}')">Edit</button></td></tr>`).join('')}</table></div>`
     :`<div class="tablewrap"><table><tr><th>Sale Challan</th><th>Customer</th><th>Down pay</th><th>Finance</th><th>Old vehicle</th><th>Status</th></tr>${L.filter(e=>e.name).map(e=>`<tr>
