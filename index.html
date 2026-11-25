@@ -3257,7 +3257,7 @@ function staffView(){
       <div class="row span2"><button class="btn">Save</button><button type="button" class="btn plain" onclick="staffView()">Clear</button></div>
     </form>${dls}${dl('sdlFC',STOCKF.filter(x=>!x[6]).map(x=>x[0]))}</div>
     <div class="card" style="max-width:760px;margin:16px auto"><h2 style="margin:0 0 8px">Finance pending – from office sale records</h2><div id="fpend"></div></div>
-    ${listCard('Finance – entries saved today')}${foot}`;
+    ${listCard('Finance – my entries today')}${foot}`;
     staffRecd('#fform'); staffFinPend();
   } else {
     $('#app').innerHTML=`<div class="card" style="max-width:760px;margin:16px auto">
@@ -3295,7 +3295,7 @@ function staffView(){
       <p class="note span2" style="margin:0">When the finance money comes, enter it in the <b>Finance</b> tab.</p>
       <p id="shint" class="note span2" style="margin:0"></p>
       <div class="row span2"><button class="btn">Save sale</button><button type="button" class="btn plain" onclick="staffView()">Clear</button></div>
-    </form>${dls}<span id="sdlS"></span></div>${listCard('Sales saved today')}${foot}`;
+    </form>${dls}<span id="sdlS"></span></div>${listCard('My sales today')}${foot}`;
     $('#sform').date.value=today(); staffDl(); staffCalc();
   }
   staffList();
@@ -3375,7 +3375,8 @@ function staffHint(){const f=$('#sform'), k=chKey(f.challan.value), e=k&&FINQ.fi
     :e?`Finance for challan ${esc(e.challan)} is already entered — the sale details will be added to it.`:''}
 function staffList(){
   const q=String(staffQ).trim().toLowerCase(), qk=chKey(q);
-  let L=FINQ.filter(e=>!q||(qk&&chKey(e.challan).includes(qk))||String(e.name||'').toLowerCase().includes(q)).sort((a,b)=>(b.at?.seconds||9e12)-(a.at?.seconds||9e12));
+  const me=String(cloudEmail||'').toLowerCase();
+  let L=FINQ.filter(e=>!e.by||String(e.by).toLowerCase()===me).filter(e=>!q||(qk&&chKey(e.challan).includes(qk))||String(e.name||'').toLowerCase().includes(q)).sort((a,b)=>(b.at?.seconds||9e12)-(a.at?.seconds||9e12));
   const pend=e=>e._p?' <span class="muted">⏳</span>':'';
   // New Sale tab: only today's saved sales (older ones drop off by themselves; search finds any day)
   const savedDay=e=>{const t=e.at&&e.at.seconds?new Date(e.at.seconds*1000):new Date(); t.setMinutes(t.getMinutes()-t.getTimezoneOffset()); return t.toISOString().slice(0,10)};
