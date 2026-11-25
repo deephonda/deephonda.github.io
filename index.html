@@ -207,6 +207,7 @@ function render(){
   if(DB.sales.some(x=>x.financeBy)||DB.daybook.some(d=>d.fin&&d.by)){DB.sales.forEach(x=>delete x.financeBy);DB.daybook.forEach(d=>{if(d.fin) delete d.by});save()}
   if(oldSync()) save();
   if(finApply()) save();
+  if(AUTO_N){ setTimeout((n=>()=>toast(`🧾 ${n} sale${n>1?'s':''} from staff added to Sales`))(AUTO_N),300); AUTO_N=0 }
   if(migrateDB()){ save(); setTimeout(()=>toast('All entries now live in the Day Book'),300) }
   appDirty=false; $('#syncbar').classList.add('hide'); setSync();
   $('#hName').textContent=DB.settings.name;
@@ -2363,7 +2364,7 @@ function cloudStart(){
   },cloudErr)));
   UNSUB.push(F.onSnapshot(F.collection(db,'shops',SHOP,'finentries'),snap=>{
     FINQ=snap.docs.map(d=>({id:d.id,...d.data()}));
-    if(cloudReady){ if(finApply()) save(); remoteChanged() }
+    if(cloudReady){ if(finApply()) save(); if(AUTO_N){ toast(`🧾 ${AUTO_N} sale${AUTO_N>1?'s':''} from staff added to Sales`); AUTO_N=0 } remoteChanged() }
   },()=>{}));
   UNSUB.push(F.onSnapshot(F.doc(db,'shops',SHOP,'meta','settings'),{includeMetadataChanges:true},snap=>{
     if(!cloudReady){ if(started) return; if(snap.metadata.fromCache&&!snap.exists()) return; init._s=snap.exists()?snap.data().j:null; begin(); return }
@@ -2515,7 +2516,9 @@ function finApply(){
   if(!CLOUD||!cloudReady||STAFF||!FINQ.length) return false; let ch=false;
   for(const e of FINQ){
     if(!chKey(e.challan)) continue;
-    const ss=stSales(e);
+    let ss=stSales(e);
+    // A complete sale from staff (customer + price + a vehicle that is in stock) becomes a sale automatically.
+    if(!ss.length&&txt(e.name)&&num(e.price)>0){ const ns=staffAutoSale(e); if(ns){ ss=[ns]; ch=true; AUTO_N++ } }
     const lbl=ss.length===1?`✓ In app: ${ss[0].name} · ${ss[0].model}`:ss.length>1?'TWO SALES HAVE THIS CHALLAN – office will check':'';
     if((e.m||'')!==lbl){ e.m=lbl; FB.F.updateDoc(finRef(e.id),{m:lbl}).catch(()=>{}) }
     if(ss.length!==1) continue;
@@ -2560,10 +2563,27 @@ function finApply(){
   }
   return ch;
 }
+let AUTO_N=0;
+function staffVehicle(e){const ch=up(e.chassis), en=up(e.engine), A=DB.stock.filter(isIn);
+  return (ch&&A.find(x=>x.chassis===ch||x.engine===ch))||(en&&A.find(x=>x.engine===en))||null}
+function staffAutoSale(e){
+  const sid='st_'+e.id; if(DB.sales.some(x=>x.id===sid)) return null;
+  const st=staffVehicle(e); if(!st) return null;
+  const inv=Math.max(num(DB.settings.nextInv)||1,1+Math.max(0,...DB.sales.map(x=>num(x.inv)))); DB.settings.nextInv=inv+1;
+  const price=num(e.price), extra=num(e.extra);
+  const sale={id:sid,inv,schallan:txt(e.challan),created:Date.now(),date:e.date||today(),stockId:st.id,model:st.model,colour:st.colour,chassis:st.chassis,engine:st.engine,key:st.key,
+    name:txt(e.name),rel:e.rel||'S/o',relName:txt(e.relName),phone:txt(e.phone),address:txt(e.address),price,extra,total:price+extra,
+    finance:num(e.amount),financer:txt(e.financer),financeReceived:false,exchange:txt(e.exModel),exchangeReg:up(e.exReg),exchangeValue:num(e.exValue),
+    notes:[txt(e.notes),'Entered by '+(e.by||'staff')].filter(Boolean).join(' · '),payments:[],fromStaff:e.id};
+  if(!sale.schallan) return null;
+  if(txt(e.pchallan)&&!txt(st.challan)) st.challan=txt(e.pchallan);
+  DB.sales.push(sale); st.status='sold'; st.saleId=sid;
+  return sale;
+}
 const stWait=()=>FINQ.filter(e=>chKey(e.challan)&&stSales(e).length!==1);
 function finBanner(){
   const n=stWait().length;
-  return n?`<div class="warn" style="cursor:pointer" onclick="finUnmatched()">🧾 <b>${n} sale ${n>1?'entries':'entry'} from staff</b> waiting to be added to the app. <u>Click to add</u></div>`:''}
+  return n?`<div class="warn" style="cursor:pointer" onclick="finUnmatched()">🧾 <b>${n} ${n>1?'entries':'entry'} from staff</b> could not be added automatically (vehicle not found in stock, price missing, or only finance). <u>Click to check and add</u></div>`:''}
 function finUnmatched(){
   const L=stWait();
   if(!L.length){dlg.close();toast('All staff entries are in the app ✓');return}
@@ -2573,7 +2593,7 @@ function finUnmatched(){
     <span class="muted">${[e.model&&'Model '+e.model,e.chassis&&'Chassis '+e.chassis,e.pchallan&&'Purch. challan '+e.pchallan].filter(Boolean).map(esc).join(' · ')}</span><br>
     Down payment ${rs(e.down)} · Finance ${rs(e.amount)} ${esc(e.financer||'')} · ${e.recd?`Finance recd ${rs(e.recdAmt)} on ${fd(e.recdDate)}`:'Finance pending'}
     ${txt(e.exReg)||txt(e.exModel)?`<br>Old vehicle: ${esc(e.exModel)} ${esc(e.exReg)} · ${rs(e.exValue)}`:''}
-    <div class="sub2">by ${esc(e.by||'')}</div>
+    <div class="sub2">by ${esc(e.by||'')}${txt(e.name)?(num(e.price)<=0?' · <b style="color:var(--amber)">price not entered</b>':!staffVehicle(e)?' · <b style="color:var(--amber)">vehicle not found in stock – choose it</b>':''):' · finance only – no office sale has this challan'}</div>
     ${stSales(e).length>1?'<p class="warn" style="margin:6px 0 0">Two sales already have this challan no. — fix the sale challan in Sales.</p>':`<button class="btn sm" style="margin-top:6px" onclick="staffToSale('${e.id}')">Create sale</button>`}</div>`).join('')}`,
   '<button class="btn" onclick="dlg.close()">Close</button>');
 }
