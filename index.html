@@ -1516,7 +1516,7 @@ const HI={'Talked today':'आज की बातचीत','Talked on':'बा�
  'All months':'सभी महीने','Find (enquiry no. / name / mobile)':'खोजें (पूछताछ नं. / नाम / मोबाइल)','Enquiries from photo (many at once)':'फ़ोटो से पूछताछ (एक साथ कई)','Convert to sale':'सेल बनाएँ','Old vehicle':'पुरानी गाड़ी','Mobile':'मोबाइल','Wants':'चाहिए','Status':'स्थिति','Notes':'नोट','Month':'महीना','Date':'तारीख़','Name':'नाम','Booked':'बुक','Calls':'कॉल','Today':'आज','Edit':'बदलें','Delete':'मिटाएँ','From':'से','To':'तक','late':'देर से',
  'Will visit the showroom':'शोरूम आएगा','Will buy later':'बाद में लेगा','Asked to call back':'बाद में फ़ोन करने को कहा','Waiting for finance / loan':'फ़ाइनेंस / लोन का इंतज़ार','Wants a better price':'रेट कम चाहिए','Will discuss with family':'घरवालों से पूछकर बताएगा','Did not pick up':'फ़ोन नहीं उठाया','Switched off / wrong number':'फ़ोन बंद / गलत नंबर','Booked / bought from us':'बुक की / हमसे ली','Bought elsewhere':'कहीं और से ली','Not interested':'नहीं लेनी','Other':'अन्य',
  'What did the customer say?':'ग्राहक ने क्या कहा?','Note (what exactly he said)':'नोट (उसने ठीक-ठीक क्या कहा)','Call again on (date he promised)':'दोबारा कॉल कब (जिस तारीख़ का वादा किया)','Tomorrow':'कल','+3 days':'+3 दिन','+1 week':'+1 हफ़्ता','+1 month':'+1 महीना','Save call':'कॉल सेव करें','Cancel':'रद्द करें','Called on':'कॉल किया','What the customer said':'ग्राहक ने क्या कहा','No calls recorded yet.':'अभी कोई कॉल दर्ज नहीं।','Save':'सेव करें',
- 'Status will become':'स्थिति हो जाएगी','no more calls.':'आगे कॉल नहीं।','enquiries':'पूछताछ','enquiry':'पूछताछ','Open':'खुली','Sold':'बिक गई','Lost':'हाथ से गई','All':'सभी','by Office':'ऑफ़िस द्वारा','View':'देखें','Delete all':'सब मिटाएँ','calls found — check and Save':'कॉल मिलीं — जाँचें और सेव करें','Save calls':'कॉल सेव करें','All called by':'सबको कॉल किया','CUSTOMER':'ग्राहक','No.':'नं.','by ':'– ','Change call':'कॉल बदलें','Delete call':'कॉल मिटाएँ','Called by':'किसने कॉल की','Call again on':'दोबारा कॉल कब'};
+ 'Status will become':'स्थिति हो जाएगी','no more calls.':'आगे कॉल नहीं।','enquiries':'पूछताछ','enquiry':'पूछताछ','Open':'खुली','Sold':'बिक गई','Lost':'हाथ से गई','All':'सभी','by Office':'ऑफ़िस द्वारा','View':'देखें','New call':'नई कॉल','Customer not in the list – new customer':'ग्राहक list में नहीं – नया ग्राहक','Next → record call':'आगे → कॉल दर्ज करें','No customer found. Use “new customer” below.':'कोई ग्राहक नहीं मिला। नीचे “नया ग्राहक” भरें।','which customer?':'कौन सा ग्राहक?','Delete all':'सब मिटाएँ','calls found — check and Save':'कॉल मिलीं — जाँचें और सेव करें','Save calls':'कॉल सेव करें','All called by':'सबको कॉल किया','CUSTOMER':'ग्राहक','No.':'नं.','by ':'– ','Change call':'कॉल बदलें','Delete call':'कॉल मिटाएँ','Called by':'किसने कॉल की','Call again on':'दोबारा कॉल कब'};
 const HIK=Object.keys(HI).sort((a,b)=>b.length-a.length);
 const HIRX=Object.fromEntries(HIK.filter(k=>k.trim().length<=6).map(k=>[k,new RegExp('(^|[^A-Za-z])'+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![A-Za-z])','g')]));
 const hiStr=t=>{let o=t; for(const k of HIK){ if(!o.includes(k)) continue; o=HIRX[k]?o.replace(HIRX[k],(m,a)=>a+HI[k]):o.split(k).join(HI[k]) } return o};
@@ -1573,7 +1573,7 @@ function talkCard(){
   const box=(v,l,c)=>`<div style="flex:1;min-width:92px;background:${c};border-radius:12px;padding:10px 12px"><div style="font-size:24px;font-weight:800;line-height:1.1">${v}</div><div style="font-size:12px;color:#555;font-weight:600">${l}</div></div>`;
   return `<div class="card" style="border:2px solid #1a56c4"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h2 style="margin:0">🗣️ ${isT?'Talked today':'Talked on '+fd(D)} <span class="muted" style="font-weight:400;font-size:15px">· ${C.length} customer${C.length===1?'':'s'}</span></h2>
-    <div class="row" style="gap:6px;flex-wrap:wrap">${STAFF?'':photoBtn('aiCalls','Calls from photo')}${tab==='enq'||STAFF?langBtn():''}<button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()-1);return d.toISOString().slice(0,10)})(new Date(talkDay||today()));render()">◀</button>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="newCallDlg()">➕ New call</button>${STAFF?'':photoBtn('aiCalls','Calls from photo')}${tab==='enq'||STAFF?langBtn():''}<button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()-1);return d.toISOString().slice(0,10)})(new Date(talkDay||today()));render()">◀</button>
       <input type="date" value="${D}" max="${today()}" style="width:auto" onchange="talkDay=this.value>=today()?'':this.value;render()">
       ${isT?'':`<button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()+1);const k=d.toISOString().slice(0,10);return k>=today()?'':k})(new Date(talkDay));render()">▶</button><button class="btn sm" onclick="talkDay='';render()">Today</button>`}</div></div>
   ${C.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -1585,6 +1585,31 @@ function talkCard(){
     <div style="font-size:13.5px">${c.note?`“${esc(c.note)}”`:'<span class="muted">—</span>'}<div class="sub2">${c.next?'Next call '+fd(c.next):c.said==='booked'?'Booked':''}${c.t?` · ${c.t}`:''} · by ${esc(nm(c.by))}</div></div>
     <div style="white-space:nowrap">${callCan(c)?`<button class="btn plain sm" title="Change this call" onclick="callEdit('${c.e.id}',${c.i})">✏️ Edit</button> <button class="btn plain sm" style="color:var(--red)" title="Delete this call" onclick="callDel('${c.e.id}',${c.i})">🗑</button> `:''}<button class="btn plain sm" onclick="callDlg('${c.e.id}')">View</button></div></div>`).join('')}</div>`
   :`<p class="muted" style="margin:0">${isT?'No customer called yet today. Use 📞 Call / record after each call.':'No calls recorded on this day.'}</p>`}</div>`;
+}
+// ➕ New call: pick any customer (or a new one) and record the call
+function newCallDlg(){
+  openDlg('➕ New call – which customer?',`<input id="ncQ" placeholder="Type name, mobile or enquiry no. (e.g. 35)" autofocus oninput="ncList()" style="font-size:16px">
+    <div id="ncL" style="margin-top:8px;max-height:320px;overflow:auto"></div>
+    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600">➕ Customer not in the list – new customer</summary>
+    <form id="fnc" class="grid" style="margin-top:8px"><label>Customer name<input name="name" required></label><label>Mobile<input name="phone" inputmode="tel"></label>
+    <label>Model wanted<input name="model" list="dlModels"></label><div style="align-self:end"><button type="button" class="btn" onclick="ncNew()">Next → record call</button></div></form>${dl('dlModels',DB.settings.models||[])}</details>`,
+  `<button class="btn plain" onclick="dlg.close()">Cancel</button>`);
+  ncList(); setTimeout(()=>$('#ncQ')?.focus(),50); hiApply(dlg);
+}
+function ncList(){
+  const q=txt($('#ncQ').value).toLowerCase(), qd=q.replace(/\D/g,''), qn=q.replace(/^e-?/,'');
+  const L=DB.enquiries.filter(e=>!q||String(e.no)===qn||(e.name||'').toLowerCase().includes(q)||(qd.length>=3&&String(e.phone||'').replace(/\D/g,'').includes(qd)))
+    .sort((a,b)=>(a.status==='Open'?0:1)-(b.status==='Open'?0:1)||(b.lastCall||b.date||'').localeCompare(a.lastCall||a.date||'')).slice(0,30);
+  $('#ncL').innerHTML=L.length?L.map(e=>`<div class="row click" style="justify-content:space-between;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer" onclick="dlg.close();callDlg('${e.id}')">
+    <div><b>${esc(e.name)}</b> <span class="muted" style="font-size:12px">${eNo(e)}</span><div class="sub2">${esc(e.phone||'')}${e.model?' · '+esc(e.model):''}${e.lastSaid?' · last: '+esc(e.lastSaid):''}</div></div>
+    <span class="pill ${e.status==='Open'?'open':e.status==='Sold'?'in':'lost'}">${esc(e.status)}</span></div>`).join(''):'<p class="muted">No customer found. Use “new customer” below.</p>';
+}
+function ncNew(){
+  const f=$('#fnc'); if(!f.reportValidity()) return; const d=formData(f), ph=ph10(d.phone);
+  const ex=ph.length===10&&DB.enquiries.find(x=>ph10(x.phone)===ph);
+  if(ex&&confirm(`This mobile is already in the register: ${eNo(ex)} ${ex.name}.\n\nOK = record the call on that enquiry\nCancel = make a new one anyway`)){dlg.close();callDlg(ex.id);return}
+  const e={id:uid(),created:Date.now(),date:today(),name:txt(d.name),phone:txt(d.phone),model:txt(d.model),status:'Open'};
+  DB.enquiries.push(e); save(); dlg.close(); callDlg(e.id);
 }
 let callsAll=false;
 function callsCard(){
@@ -1762,7 +1787,8 @@ function delEnqAll(){
   const ids=new Set(L.map(e=>e.id)); DB.enquiries=DB.enquiries.filter(e=>!ids.has(e.id)); save(); render(); toast(`${L.length} enquiries deleted`);
 }
 function saveEnq(id){
-  const f=$('#fen'); if(!f.reportValidity()) return; const d=formData(f);
+  // the Enquiries page has its own “New enquiry” form with the same id – take the one in the Edit box
+  const f=(id&&dlg.open&&dlg.querySelector('#fen'))||document.querySelector('#app #fen')||$('#fen'); if(!f.reportValidity()) return; const d=formData(f);
   const ph=String(d.phone||'').replace(/\D/g,'').slice(-10), de=ph.length===10&&DB.enquiries.find(x=>x.id!==id&&x.status==='Open'&&String(x.phone||'').replace(/\D/g,'').slice(-10)===ph);
   if(de&&!confirm(`⚠ Possible DOUBLE ENTRY\n\nAn open enquiry for mobile ${d.phone} already exists (${de.name}, ${fd(de.date)}).\n\nSave anyway?`)) return;
   if(id) Object.assign(DB.enquiries.find(x=>x.id===id),d); else DB.enquiries.push({id:uid(),created:Date.now(),...d});
