@@ -39,6 +39,7 @@ main{max-width:1440px;margin:0 auto;padding:16px}
 .hwho{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:999px;padding:5px 12px;font-size:13px;margin-right:10px;line-height:1.25;max-width:100%}
 .hwho b{font-weight:700}.hwho .em{opacity:.85;font-size:12px}
 @media(max-width:700px){.talkrow{grid-template-columns:1fr 1fr!important}}
+.langsw{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}.langsw button{border:0;background:#fff;padding:5px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:#555}.langsw button.on{background:#1a56c4;color:#fff}
 .dhero{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;background:linear-gradient(120deg,#b30000,#e02424 60%,#f05252);color:#fff;border-radius:14px;padding:20px 22px;margin-bottom:14px;box-shadow:0 6px 18px rgba(180,0,0,.18)}
 .dchip{display:inline-block;background:rgba(255,255,255,.2);border-radius:999px;padding:2px 10px;font-size:12px;margin-left:6px}
 .dbtn{background:#fff!important;color:#b30000!important;border:0!important;font-weight:700}
@@ -1458,13 +1459,13 @@ function callDlg(id,pre){
       <p id="callSt" class="note span2" style="margin:0"></p>
     </form>`,
   `<button class="btn plain" onclick="dlg.close()">Cancel</button>${e.status==='Open'&&!STAFF?`<button class="btn ghost" onclick="dlg.close();newSale(null,'${id}')">Convert to sale</button>`:''}<button class="btn" onclick="saveCall('${id}')">Save call</button>`);
-  const k=pre&&SAIDUI[pre]&&pre!=='none'?pre:'visit'; $('#fcall').said.value=k; callSaid(k);
+  const k=pre&&SAIDUI[pre]&&pre!=='none'?pre:'visit'; $('#fcall').said.value=k; callSaid(k); hiApply(dlg);
   dlg.addEventListener('close',()=>{if(pre) render()},{once:true});
 }
 function callSaid(k){const f=$('#fcall'); if(!f) return; const x=SAID.find(s=>s[0]===k)||[];
   const closes=['booked','elsewhere','noint'].includes(k);
   f.next.disabled=closes; if(!closes&&x[2]) f.next.value=addDays(x[2]);
-  $('#callSt').innerHTML=k==='booked'?'Status will become <b>Sold</b>. (Use “Convert to sale” to make the sale.)':closes?'Status will become <b>Lost</b> – no more calls.':''}
+  setTimeout(()=>hiApply($('#callSt')),0); $('#callSt').innerHTML=k==='booked'?'Status will become <b>Sold</b>. (Use “Convert to sale” to make the sale.)':closes?'Status will become <b>Lost</b> – no more calls.':''}
 function saveCall(id){
   const e=DB.enquiries.find(x=>x.id===id), d=formData($('#fcall')), k=d.said;
   const closes=['booked','elsewhere','noint'].includes(k);
@@ -1475,6 +1476,28 @@ function saveCall(id){
   if(closes){ e.status=k==='booked'?'Sold':'Lost'; e.closedByCall=1; delete e.followUp } else { e.followUp=d.next; delete e.closedByCall }
   save(); dlg.close(); render(); toast(closes?'Saved – enquiry closed':'Saved – next call on '+fd(d.next));
 }
+// ===== Enquiries in Hindi or English (switch on the Enquiries screen) =====
+let LANG='en'; try{LANG=localStorage.getItem('enqLang')||'en'}catch(e){}
+const HI={'Talked today':'आज की बातचीत','Talked on':'बातचीत –','customers':'ग्राहक','customer':'ग्राहक','Calls from photo':'फ़ोटो से कॉल','Positive':'पॉज़िटिव','No answer':'फ़ोन नहीं उठाया','WHO CALLED':'किसने कॉल किया','Next call':'अगली कॉल','Calls to make today':'आज इन्हें कॉल करना है',
+ 'Customers whose promised date is today (or already passed)':'जिनकी वादे की तारीख़ आज है (या निकल चुकी है)','Call date':'कॉल की तारीख़','Last time he said':'पिछली बार क्या कहा','Call / record':'कॉल / दर्ज करें','Not called yet':'अभी कॉल नहीं हुई','Show all':'सब दिखाएँ','Show less':'कम दिखाएँ','No calls due today.':'आज कोई कॉल बाकी नहीं।',
+ 'No customer called yet today. Use 📞 Call / record after each call.':'आज अभी किसी को कॉल दर्ज नहीं हुई। हर कॉल के बाद 📞 कॉल / दर्ज करें दबाएँ।','No calls recorded on this day.':'इस दिन कोई कॉल दर्ज नहीं।',
+ 'New enquiry':'नई पूछताछ','Customer name':'ग्राहक का नाम','Model wanted':'कौन सी गाड़ी चाहिए','Old vehicle (exchange)':'पुरानी गाड़ी (बदले में)','Next call on':'अगली कॉल कब','Save enquiry':'पूछताछ सेव करें','Enquiry register':'पूछताछ रजिस्टर',
+ 'All months':'सभी महीने','Find (enquiry no. / name / mobile)':'खोजें (पूछताछ नं. / नाम / मोबाइल)','Enquiries from photo (many at once)':'फ़ोटो से पूछताछ (एक साथ कई)','Convert to sale':'सेल बनाएँ','Old vehicle':'पुरानी गाड़ी','Mobile':'मोबाइल','Wants':'चाहिए','Status':'स्थिति','Notes':'नोट','Month':'महीना','Date':'तारीख़','Name':'नाम','Booked':'बुक','Calls':'कॉल','Today':'आज','Edit':'बदलें','Delete':'मिटाएँ','From':'से','To':'तक','late':'देर से',
+ 'Will visit the showroom':'शोरूम आएगा','Will buy later':'बाद में लेगा','Asked to call back':'बाद में फ़ोन करने को कहा','Waiting for finance / loan':'फ़ाइनेंस / लोन का इंतज़ार','Wants a better price':'रेट कम चाहिए','Will discuss with family':'घरवालों से पूछकर बताएगा','Did not pick up':'फ़ोन नहीं उठाया','Switched off / wrong number':'फ़ोन बंद / गलत नंबर','Booked / bought from us':'बुक की / हमसे ली','Bought elsewhere':'कहीं और से ली','Not interested':'नहीं लेनी','Other':'अन्य',
+ 'What did the customer say?':'ग्राहक ने क्या कहा?','Note (what exactly he said)':'नोट (उसने ठीक-ठीक क्या कहा)','Call again on (date he promised)':'दोबारा कॉल कब (जिस तारीख़ का वादा किया)','Tomorrow':'कल','+3 days':'+3 दिन','+1 week':'+1 हफ़्ता','+1 month':'+1 महीना','Save call':'कॉल सेव करें','Cancel':'रद्द करें','Called on':'कॉल किया','What the customer said':'ग्राहक ने क्या कहा','No calls recorded yet.':'अभी कोई कॉल दर्ज नहीं।','Save':'सेव करें',
+ 'Status will become':'स्थिति हो जाएगी','no more calls.':'आगे कॉल नहीं।','enquiries':'पूछताछ','enquiry':'पूछताछ','Open':'खुली','Sold':'बिक गई','Lost':'हाथ से गई','All':'सभी','by Office':'ऑफ़िस द्वारा','View':'देखें','Delete all':'सब मिटाएँ','calls found — check and Save':'कॉल मिलीं — जाँचें और सेव करें','Save calls':'कॉल सेव करें','All called by':'सबको कॉल किया','CUSTOMER':'ग्राहक','No.':'नं.','by ':'– ','Change call':'कॉल बदलें','Delete call':'कॉल मिटाएँ','Called by':'किसने कॉल की','Call again on':'दोबारा कॉल कब'};
+const HIK=Object.keys(HI).sort((a,b)=>b.length-a.length);
+const HIRX=Object.fromEntries(HIK.filter(k=>k.trim().length<=6).map(k=>[k,new RegExp('(^|[^A-Za-z])'+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![A-Za-z])','g')]));
+const hiStr=t=>{let o=t; for(const k of HIK){ if(!o.includes(k)) continue; o=HIRX[k]?o.replace(HIRX[k],(m,a)=>a+HI[k]):o.split(k).join(HI[k]) } return o};
+function hiApply(root){
+  if(LANG!=='hi'||!root) return;
+  root.querySelectorAll('option').forEach(o=>{ if(!o.hasAttribute('value')) o.setAttribute('value',o.textContent) });
+  const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:n=>{const p=n.parentElement; return !p||(p.tagName==='OPTION'?false:p.closest('b,a,.mono,script,style,.langsw,.sub2 b'))||!/[A-Za-z]/.test(n.nodeValue)?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT}});
+  const L=[]; while(w.nextNode()) L.push(w.currentNode); L.forEach(n=>{const v=hiStr(n.nodeValue); if(v!==n.nodeValue) n.nodeValue=v});
+  root.querySelectorAll('input[placeholder]').forEach(i=>{const v=hiStr(i.placeholder); if(v!==i.placeholder) i.placeholder=v});
+}
+const langBtn=()=>`<span class="langsw"><button class="${LANG==='en'?'on':''}" onclick="setLang('en')">EN</button><button class="${LANG==='hi'?'on':''}" onclick="setLang('hi')">हिंदी</button></span>`;
+function setLang(l){LANG=l;try{localStorage.setItem('enqLang',l)}catch(e){};render()}
 let talkDay='';
 // owner can change any call; an employee only his own calls of today
 const callCan=c=>!STAFF||(String(c.by||'').toLowerCase()===String(cloudEmail).toLowerCase()&&c.date===today());
@@ -1500,6 +1523,7 @@ function callEdit(eid,i){
     <label>Call again on<input type="date" name="next" value="${esc(c.next||'')}"></label>
     <label>Called on<input type="date" name="date" value="${esc(c.date)}" max="${today()}" ${STAFF?'disabled':''}></label></form>`,
   `<button class="btn plain" style="margin-right:auto;color:var(--red)" onclick="callDel('${eid}',${i})">🗑 Delete call</button><button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="callEditSave('${eid}',${i})">Save</button>`);
+  hiApply(dlg);
 }
 function callEditSave(eid,i){
   const e=DB.enquiries.find(x=>x.id===eid), c=e.calls[i], d=formData($('#fce')), closes=['booked','elsewhere','noint'].includes(d.said);
@@ -1518,7 +1542,7 @@ function talkCard(){
   const box=(v,l,c)=>`<div style="flex:1;min-width:92px;background:${c};border-radius:12px;padding:10px 12px"><div style="font-size:24px;font-weight:800;line-height:1.1">${v}</div><div style="font-size:12px;color:#555;font-weight:600">${l}</div></div>`;
   return `<div class="card" style="border:2px solid #1a56c4"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h2 style="margin:0">🗣️ ${isT?'Talked today':'Talked on '+fd(D)} <span class="muted" style="font-weight:400;font-size:15px">· ${C.length} customer${C.length===1?'':'s'}</span></h2>
-    <div class="row" style="gap:6px"><button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()-1);return d.toISOString().slice(0,10)})(new Date(talkDay||today()));render()">◀</button>
+    <div class="row" style="gap:6px;flex-wrap:wrap">${STAFF?'':photoBtn('aiCalls','Calls from photo')}${tab==='enq'||STAFF?langBtn():''}<button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()-1);return d.toISOString().slice(0,10)})(new Date(talkDay||today()));render()">◀</button>
       <input type="date" value="${D}" max="${today()}" style="width:auto" onchange="talkDay=this.value>=today()?'':this.value;render()">
       ${isT?'':`<button class="btn plain sm" onclick="talkDay=(d=>{d.setDate(d.getDate()+1);const k=d.toISOString().slice(0,10);return k>=today()?'':k})(new Date(talkDay));render()">▶</button><button class="btn sm" onclick="talkDay='';render()">Today</button>`}</div></div>
   ${C.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -1528,7 +1552,7 @@ function talkCard(){
     <div><b>${esc(c.e.name)}</b> <span class="muted" style="font-size:12px">${eNo(c.e)}</span><div class="sub2">${esc(c.e.model||'')}${c.e.phone?` · <a href="tel:${esc(String(c.e.phone).replace(/[^\d+]/g,''))}">${esc(c.e.phone)}</a>`:''}</div></div>
     <div>${chip(c.said)}</div>
     <div style="font-size:13.5px">${c.note?`“${esc(c.note)}”`:'<span class="muted">—</span>'}<div class="sub2">${c.next?'Next call '+fd(c.next):c.said==='booked'?'Booked':''}${c.t?` · ${c.t}`:''} · by ${esc(nm(c.by))}</div></div>
-    <div style="white-space:nowrap">${callCan(c)?`<button class="btn plain sm" title="Change this call" onclick="callEdit('${c.e.id}',${c.i})">✏️ Edit</button> <button class="btn plain sm" style="color:var(--red)" title="Delete this call" onclick="callDel('${c.e.id}',${c.i})">🗑</button> `:''}<button class="btn plain sm" onclick="callDlg('${c.e.id}')">Open</button></div></div>`).join('')}</div>`
+    <div style="white-space:nowrap">${callCan(c)?`<button class="btn plain sm" title="Change this call" onclick="callEdit('${c.e.id}',${c.i})">✏️ Edit</button> <button class="btn plain sm" style="color:var(--red)" title="Delete this call" onclick="callDel('${c.e.id}',${c.i})">🗑</button> `:''}<button class="btn plain sm" onclick="callDlg('${c.e.id}')">View</button></div></div>`).join('')}</div>`
   :`<p class="muted" style="margin:0">${isT?'No customer called yet today. Use 📞 Call / record after each call.':'No calls recorded on this day.'}</p>`}</div>`;
 }
 let callsAll=false;
@@ -1583,6 +1607,66 @@ List EVERY customer enquiry you find in "enquiries", one per customer.
   }catch(e){aiFail(e)}
 }
 function ph10(v){return String(v||'').replace(/\D/g,'').slice(-10)}
+// ===== Calls from photo: employee's call list (paper / WhatsApp) → call records on the enquiries =====
+const callSchema=()=>objSchema({calls:{type:'array',items:objSchema({call_date:S_STR,name:S_STR,phone:S_STR,model:S_STR,said:{type:'string',enum:SAID.map(x=>x[0])},note:S_STR,next_date:S_STR})}});
+async function aiCalls(files){
+  try{
+    const a=await aiPrep(files,'Reading the call list…'); if(!a) return;
+    const prompt=`These photos are from an Indian two-wheeler showroom (Honda). An employee called customers who had enquired, and wrote down (on paper, in a register or in a WhatsApp message) whom he called and what the customer said. The writing may be in Hindi, Hinglish or English.
+List EVERY customer call in "calls", one per customer.
+- name: customer name (keep Hindi if written in Hindi). phone: 10-digit mobile number only, "" if not written.
+- model: vehicle the customer wants, if written.
+- call_date: date of the call as YYYY-MM-DD (Indian dates are day-month-year); "" if not written.
+- said: what the customer answered, choose the closest one: ${SAID.map(([k,l])=>k+' = '+l).join('; ')}. ("phone nahi uthaya / no answer / ring" = noans; "band / switch off / galat number" = off; "aayega / visit karega" = visit; "baad mein lega / agle mahine" = later; "baad mein call karna" = callback; "loan / finance" = finance; "rate kam / discount" = price; "ghar walon se poochh ke" = family; "booking / le li hamare se" = booked; "kahin aur se le li" = elsewhere; "nahi lena" = noint).
+- note: the customer's words as written (short, keep the original language).
+- next_date: the date the customer asked to be called again / promised to come, as YYYY-MM-DD; "" if not written. If it says "kal" (tomorrow) or "2 din baad", work it out from call_date.
+- If you cannot read a name, number or word, write "?" in that field. Never invent a value.`;
+    const d=await aiRun(a.key,a.parts,prompt,callSchema(),'calls');
+    if(!d.calls?.length) throw new Error('No call found in this photo. Try again with a clear, straight photo.');
+    reviewCalls(d.calls);
+  }catch(e){aiFail(e)}
+}
+function callMatch(c){const ph=ph10(c.phone), n=txt(c.name).toLowerCase();
+  return (ph.length===10&&DB.enquiries.find(x=>ph10(x.phone)===ph))||(n&&n!=='?'&&DB.enquiries.filter(x=>txt(x.name).toLowerCase()===n).sort((a,b)=>(a.status==='Open'?0:1)-(b.status==='Open'?0:1))[0])||null}
+function reviewCalls(C){
+  const U=accUsers(), byOpt=`<option value="">Office</option>${U.filter(u=>u.enq||u.full).map(u=>`<option value="${esc(u.email)}">${esc(u.name)}</option>`).join('')}`;
+  const E=[...DB.enquiries].sort((a,b)=>(b.no||0)-(a.no||0));
+  const rows=C.map((c,i)=>{const m=callMatch(c), dt=toISO(c.call_date)||today();
+    return `<tr><td><input type="checkbox" checked style="width:auto"> <b>${i+1}</b></td>
+    <td><input type="date" name="date" value="${dt}" max="${today()}"></td>
+    <td><input name="name" value="${esc(txt(c.name))}" style="min-width:120px"><div class="sub2">${esc(txt(c.phone))}${c.model?' · '+esc(c.model):''}</div><input type="hidden" name="phone" value="${esc(txt(c.phone))}"><input type="hidden" name="model" value="${esc(txt(c.model))}"></td>
+    <td><select name="eid" style="max-width:230px">${m?'':'<option value="" selected>➕ New enquiry</option>'}${m?`<option value="${m.id}" selected>✓ ${eNo(m)} ${esc(m.name)} ${esc(m.phone||'')}</option><option value="">➕ New enquiry</option>`:''}${E.filter(x=>x!==m).slice(0,300).map(x=>`<option value="${x.id}">${eNo(x)} ${esc(x.name)} ${esc(x.phone||'')}</option>`).join('')}</select></td>
+    <td><select name="said">${SAID.map(([k,l])=>`<option value="${k}" ${k===c.said?'selected':''}>${(SAIDUI[k]||[''])[0]} ${l}</option>`).join('')}</select></td>
+    <td><input name="note" value="${esc(txt(c.note))}" style="min-width:150px"></td>
+    <td><input type="date" name="next" value="${esc(toISO(c.next_date)||'')}"></td>
+    <td><select name="by" style="width:auto">${byOpt}</select></td></tr>`}).join('');
+  openDlg(`📷 ${C.length} calls found — check and Save`,`<p class="note" style="margin-top:0">Each call is added to the customer’s enquiry (✓ = found by mobile / name). If the customer is not in the register, “➕ New enquiry” makes one. ❓ yellow = AI could not read it.<br>Set <b>Called by</b> to the employee who made the calls.</p>
+  <div class="row" style="gap:8px;margin-bottom:8px"><label style="margin:0">All called by <select style="width:auto" onchange="document.querySelectorAll('#clT [name=by]').forEach(s=>s.value=this.value)">${byOpt}</select></label></div>
+  <div class="tablewrap imp"><table id="clT"><tr><th></th><th>Call date</th><th>Customer</th><th>Enquiry</th><th>What he said</th><th>Note</th><th>Call again on</th><th>Called by</th></tr>${rows}</table></div>`,
+  `<button class="btn plain" onclick="dlg.close()">Cancel</button><button class="btn" onclick="saveCallsPhoto()">Save calls</button>`);
+  markQ('clT',''); hiApply(dlg);
+  dlg.style.maxWidth='1400px'; dlg.style.width='97vw'; dlg.addEventListener('close',()=>{dlg.style.maxWidth='';dlg.style.width=''},{once:true});
+}
+function saveCallsPhoto(){
+  const q=qRows('clT'); if(q.length&&!confirm(`❓ Row ${q.join(', ')} still has "?" (AI could not read it).\n\nCorrect it first, or press OK to save as it is.`)) return;
+  const rows=[], bad=[];
+  [...document.querySelectorAll('#clT tr')].slice(1).forEach((tr,i)=>{ if(!tr.querySelector('input[type=checkbox]').checked) return;
+    const g=n=>txt(tr.querySelector(`[name=${n}]`).value); const r={i:i+1,date:g('date')||today(),name:g('name'),phone:g('phone'),model:g('model'),eid:g('eid'),said:g('said'),note:g('note'),next:g('next'),by:g('by')};
+    const closes=['booked','elsewhere','noint'].includes(r.said);
+    if(!r.eid&&!r.name){bad.push(r.i+': name empty');return}
+    if(!closes&&!r.next) r.next=(d=>{d.setDate(d.getDate()+((SAID.find(x=>x[0]===r.said)||[])[2]||3));return d.toISOString().slice(0,10)})(new Date(r.date));
+    rows.push(r)});
+  if(bad.length){alert('Row '+bad.join('\n'));return}
+  if(!rows.length){alert('No call selected.');return}
+  const dupe=rows.filter(r=>r.eid&&(DB.enquiries.find(x=>x.id===r.eid).calls||[]).some(c=>c.date===r.date&&c.said===r.said));
+  if(dupe.length&&!confirm(`⚠ Possible DOUBLE ENTRY\n\n${dupe.map(r=>'Row '+r.i+' '+r.name).join('\n')}\nalready has the same call on that date.\n\nSave anyway?`)) return;
+  let nNew=0; const t0=Date.now();
+  rows.forEach((r,k)=>{ let e=r.eid&&DB.enquiries.find(x=>x.id===r.eid);
+    if(!e){ e={id:uid(),created:t0+k,date:r.date,name:r.name,phone:r.phone,model:r.model,status:'Open',notes:'From call list photo'}; DB.enquiries.push(e); nNew++ }
+    (e.calls=e.calls||[]).push({date:r.date,said:r.said,note:r.note,next:['booked','elsewhere','noint'].includes(r.said)?'':r.next,by:r.by,src:'photo'});
+    e.calls.sort((a,b)=>(a.date+(a.t||'')).localeCompare(b.date+(b.t||''))); callRecalc(e) });
+  save(); dlg.close(); render(); toast(`✓ ${rows.length} calls saved${nNew?` · ${nNew} new enquir${nNew>1?'ies':'y'}`:''}`);
+}
 function reviewEnq(E){
   const inp=(n,v,w,x='')=>`<input name="${n}" value="${esc(v)}" style="min-width:${w}px" ${x}>`;
   const seen=new Set();
@@ -1624,11 +1708,12 @@ function vEnq(){
     <label style="margin:0;flex:1;min-width:200px">Find (enquiry no. / name / mobile)<input id="enqQ" placeholder="e.g. 35 or E-35 or Rohit or 98172" value="${esc(enqQ)}" oninput="enqQ=this.value;enqList()"></label>
     ${enqFrom||enqTo||enqQ?'<button class="btn plain sm" onclick="enqM=enqFrom=enqTo=enqQ=\'\';vEnq()">✕ Clear</button>':''}
   </div><div id="enqList"></div></div>`;
-  enqList();
+  enqList(); hiApply($('#app'));
 }
 function enqList(){
   const r=enqRows(), p=enqPeriod();
   $('#enqList').innerHTML=`<p class="note" style="margin:0 0 8px"><b>${r.length}</b> enquir${r.length===1?'y':'ies'}${p?' · '+esc(p):''}</p>`+(r.length?enqTable(r):'<div class="empty">No enquiries.</div>');
+  setTimeout(()=>hiApply($('#enqList')),0);
   $('#enqDelBtn').innerHTML=r.length&&!STAFF?`<button class="btn plain sm" style="color:var(--red);border-color:var(--red)" onclick="delEnqAll()">🗑 Delete all (${r.length})</button>`:'';
 }
 function delEnq(id){
