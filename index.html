@@ -529,7 +529,7 @@ function dupApply(){
 }
 function editStock(id){
   const s=DB.stock.find(x=>x.id===id);
-  openDlg('Edit vehicle',`<form id="fe" class="grid">
+  openDlg('Edit vehicle',`<form id="fe" class="grid" onsubmit="event.preventDefault();saveStockEdit('${id}')">
     <label>Date<input type="date" name="date" value="${esc(s.date)}"></label><label>Purchase Challan No<input name="challan" value="${esc(s.challan)}"></label>
     <label>Model<input name="model" list="dlModels" value="${esc(s.model)}"></label><label>Colour<input name="colour" list="dlCols" value="${esc(s.colour)}"></label>
     <label>Engine No<input name="engine" class="mono" value="${esc(s.engine)}"></label><label>Chassis No<input name="chassis" class="mono" value="${esc(s.chassis)}"></label>
@@ -541,7 +541,10 @@ function saveStockEdit(id){
   const d=formData($('#fe')); if(d.cost)d.cost=String(num(d.cost)); d.chassis=up(d.chassis); d.engine=up(d.engine); d.key=up(d.key);
   const c=DB.stock.find(x=>x.id!==id&&x.status!=='returned'&&((d.chassis&&x.chassis===d.chassis)||(d.engine&&x.engine===d.engine)));
   if(c&&!confirm(`⚠ Possible DOUBLE ENTRY\n\nAnother vehicle already has this ${c.chassis===d.chassis?'chassis':'engine'} number (${c.model}, challan ${c.challan||'—'}).\n\nSave anyway?`)) return;
-  Object.assign(DB.stock.find(x=>x.id===id),d); save(); dlg.close(); render(); toast('Saved');
+  const st=DB.stock.find(x=>x.id===id); if(!st){alert('This vehicle was not found (maybe deleted on another device). Press Refresh and try again.');return}
+  try{ Object.assign(st,d); save(); }catch(er){ alert('⚠ NOT SAVED\n\n'+(er&&er.message||er)); return }
+  dlg.close(); try{render()}catch(er){console.error(er)}
+  toast(`✓ Saved – ${st.model||''}${st.key?' · Key '+st.key:''}`);
 }
 
 /* ---------- sales ---------- */
