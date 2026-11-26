@@ -967,9 +967,39 @@ let dayFrom=today().slice(0,8)+'01', dayTo=today(), dayH='', dayPreset=null;
 const H={dealer:'Payment to Dealer',spareSup:'Payment to Spare Parts Supplier',rent:'Rent',sal:'Salary & Wages',spare:'Spare Parts Expenses',work:'Workshop Expenses',misc:'Miscellaneous Expenses',show:'Showroom Expenses',capOut:'Partner withdrawal',mrec:'Miscellaneous Receipts',capIn:'Partner capital (money in)',hand:'Partner handed over money'};
 const HEADS_OUT=[H.dealer,H.spareSup,H.rent,H.sal,H.spare,H.work,H.misc,H.show,H.capOut];
 const HEADS_IN=[H.mrec,'Service / workshop income','Other income',H.hand,H.capIn];
-const EXP_HEADS=[H.spare,H.work,H.misc,H.show];
+const EXP_HEADS=[H.spare,H.work,H.misc,H.show], EXP_B=[...EXP_HEADS];
 const isCapH=h=>h===H.capIn||h===H.capOut||h===H.hand;
-const headOpts=(type,sel)=>opts(type==='in'?HEADS_IN:HEADS_OUT,sel);
+const HB_OUT=[...HEADS_OUT], HB_IN=[...HEADS_IN];
+// heads made by the user (Day Book → Head → "➕ New head…")
+function syncHeads(){ const C=DB.settings.customHeads||{};
+  HEADS_OUT.length=0; HEADS_OUT.push(...HB_OUT.slice(0,-1),...(C.out||[]),HB_OUT[HB_OUT.length-1]);
+  HEADS_IN.length=0; HEADS_IN.push(...HB_IN.slice(0,-2),...(C.in||[]),...HB_IN.slice(-2));
+  EXP_HEADS.length=0; EXP_HEADS.push(...EXP_B,...(C.out||[])); }   // a new payment head counts as an expense
+const headOpts=(type,sel)=>{syncHeads(); return opts(type==='in'?HEADS_IN:HEADS_OUT,sel)+`<option value="__new">➕ New head…</option>`};
+function headPick(sel){
+  if(sel.value!=='__new') return dxRender(sel.form);
+  const f=sel.form, type=f.type.value, n=txt(prompt(`New ${type==='in'?'RECEIPT (money in)':'PAYMENT (money out)'} head – name:\n\ne.g. Electricity bill, Petrol, Advertisement, Insurance commission`)||'').replace(/\s+/g,' ');
+  const back=()=>{sel.value=(type==='in'?HEADS_IN:HEADS_OUT)[0]; dxRender(f)};
+  if(!n) return back();
+  const all=[...HB_OUT,...HB_IN,...Object.values(DB.settings.customHeads||{}).flat(),'Sale receipt','Finance received'];
+  const ex=all.find(h=>h.toLowerCase()===n.toLowerCase()); if(ex){ alert(`“${ex}” already exists.`); f.head.innerHTML=headOpts(type,ex); if(![...f.head.options].some(o=>o.value===ex)) back(); dxRender(f); return }
+  const C=DB.settings.customHeads||(DB.settings.customHeads={}); (C[type]=C[type]||[]).push(n); save();
+  f.head.innerHTML=headOpts(type,n); dxRender(f); toast(`✓ Head “${n}” added`);
+}
+function headsDlg(){
+  syncHeads(); const C=DB.settings.customHeads||{}, used=h=>DB.daybook.filter(d=>d.head===h).length;
+  const row=(t,h)=>`<tr><td><b>${esc(h)}</b></td><td>${t==='in'?'Receipt (in)':'Payment (out)'}</td><td class="num">${used(h)}</td><td style="white-space:nowrap"><button class="btn plain sm" onclick="headRen('${t}','${esc(h).replace(/'/g,"\\'")}')">Rename</button> ${used(h)?'':`<button class="btn plain sm" style="color:var(--red)" onclick="headDel('${t}','${esc(h).replace(/'/g,"\\'")}')">Delete</button>`}</td></tr>`;
+  const L=[...(C.out||[]).map(h=>row('out',h)),...(C.in||[]).map(h=>row('in',h))];
+  openDlg('Day Book heads you made',L.length?`<div class="tablewrap"><table><tr><th>Head</th><th>Type</th><th class="num">Entries</th><th></th></tr>${L.join('')}</table></div><p class="note">A head that already has entries can be renamed but not deleted.</p>`:'<p class="muted">No heads made yet. In the entry form choose Head → “➕ New head…”.</p>',
+  `<button class="btn plain" onclick="dlg.close();render()">Close</button><button class="btn" onclick="headNew()">➕ New head</button>`);
+}
+function headNew(){const t=confirm('Is the new head for MONEY OUT (payment)?\n\nOK = Payment (money out)\nCancel = Receipt (money in)')?'out':'in', n=txt(prompt('Name of the new head:')||''); if(!n) return;
+  if([...HEADS_OUT,...HEADS_IN].some(h=>h.toLowerCase()===n.toLowerCase())){alert('This head already exists.');return}
+  const C=DB.settings.customHeads||(DB.settings.customHeads={}); (C[t]=C[t]||[]).push(n); save(); headsDlg(); toast(`✓ Head “${n}” added`)}
+function headRen(t,h){const n=txt(prompt('New name for “'+h+'”:',h)||''); if(!n||n===h) return;
+  if([...HEADS_OUT,...HEADS_IN].some(x=>x!==h&&x.toLowerCase()===n.toLowerCase())){alert('A head with this name already exists.');return}
+  const C=DB.settings.customHeads; C[t]=C[t].map(x=>x===h?n:x); DB.daybook.forEach(d=>{if(d.head===h) d.head=n}); if(dayH===h) dayH=n; save(); headsDlg(); toast('Renamed')}
+function headDel(t,h){if(!confirm('Delete head “'+h+'”?')) return; const C=DB.settings.customHeads; C[t]=C[t].filter(x=>x!==h); save(); headsDlg()}
 // Entries paid / kept by a partner personally, and old entries, do not move the business cash.
 const inCash=d=>!d.by&&!d.old&&!d.fin;   // finance money goes straight to the dealer's account
 function dayBalance(before){
@@ -997,11 +1027,11 @@ function dayExtra(type,head,x={}){
   return L.join('');
 }
 function dayForm(x={}){
-  const type=x.type||'out', head=x.head||(type==='in'?HEADS_IN:HEADS_OUT)[0];
+  syncHeads(); const type=x.type||'out', head=x.head||(type==='in'?HEADS_IN:HEADS_OUT)[0];
   return `<label>Date (from)<input type="date" name="date" value="${esc(x.date||today())}" required></label>
   <label title="Only if this entry is for a period, e.g. 1–15 Nov">Till date (optional)<input type="date" name="dateTo" value="${esc(x.dateTo||'')}"></label>
   <label>Type<select name="type" onchange="dxType(this.form)"><option value="out" ${type==='out'?'selected':''}>Payment (money out)</option><option value="in" ${type==='in'?'selected':''}>Receipt (money in)</option></select></label>
-  <label>Head (account)<select name="head" onchange="dxRender(this.form)">${headOpts(type,head)}</select></label>
+  <label>Head (account) <a href="#" style="font-weight:400;font-size:12px" onclick="headsDlg();return false">manage</a><select name="head" onchange="headPick(this)">${headOpts(type,head)}</select></label>
   <label>Amount ₹<input name="amount" inputmode="decimal" value="${x.amount?num(x.amount):''}" required></label>
   <label>Mode<select name="mode">${opts(['Cash','Bank','UPI','Cheque','RTGS / NEFT'],x.mode||'Cash')}</select></label>
   <div class="dx" style="display:contents">${dayExtra(type,head,x)}</div>
@@ -1012,6 +1042,7 @@ const dxVals=f=>{const o={};f.querySelectorAll('.dx [name]').forEach(i=>o[i.name
 function dxType(f){f.head.innerHTML=headOpts(f.type.value);dxRender(f)}
 function dxRender(f){f.querySelector('.dx').innerHTML=dayExtra(f.type.value,f.head.value,dxVals(f))}
 function dayRec(d){
+  if(d.head==='__new'){alert('Choose a head (or make the new head first).');return null}
   if(d.dateTo&&d.dateTo<d.date){alert('“Till date” cannot be before the date.');return null}
   const r={date:d.date,type:d.type,head:d.head,amount:num(d.amount),mode:d.mode,particulars:txt(d.particulars)};
   if(d.dateTo&&d.dateTo!==d.date) r.dateTo=d.dateTo;
@@ -1030,7 +1061,7 @@ function vDay(){
   <div class="card"><div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Day Book</h2>
     <label style="flex-direction:row;align-items:center">From <input type="date" value="${dayFrom}" onchange="dayFrom=this.value;dayList()" style="width:auto"></label>
     <label style="flex-direction:row;align-items:center">To <input type="date" value="${dayTo}" onchange="dayTo=this.value;dayList()" style="width:auto"></label>
-    <select style="width:auto" onchange="dayH=this.value;dayList()"><option value="">All heads</option>${[...HEADS_OUT,...HEADS_IN,'Sale receipt','Finance received'].map(h=>`<option ${dayH===h?'selected':''}>${esc(h)}</option>`).join('')}</select>
+    <select style="width:auto" onchange="dayH=this.value;dayList()"><option value="">All heads</option>${(syncHeads(),[...HEADS_OUT,...HEADS_IN,'Sale receipt','Finance received']).map(h=>`<option ${dayH===h?'selected':''}>${esc(h)}</option>`).join('')}</select>
     <button class="btn plain sm" onclick="dayFrom=dayTo=today();vDay()">Today</button>
     <button class="btn plain sm" onclick="csv('daybook')">Export Excel (CSV)</button><button class="btn plain sm" onclick="pdfExport('daybook')">📄 PDF</button></div><div id="dayList"></div></div>`;
   dayList(); if(pre.head) $('#fd').amount.focus();
